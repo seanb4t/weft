@@ -5,8 +5,9 @@
 
 # Weft — Design
 
-> Status: **exploratory design**, captured from a brainstorming session.
-> Not yet reviewed by `design-reviewer`. No implementation exists.
+> Status: **design-reviewer READY** (round 2). Round-1 findings addressed
+> (executor empty-commit, status mechanics, change-id storage, ship rebase).
+> §9 open seams deferred to child specs. No implementation exists yet.
 
 ## 1. What Weft is
 
@@ -132,19 +133,25 @@ Two loops: an **orchestrator** (main context, talks to beads) and an
 **Executor (fresh context, one workspace):**
 
 1. Read the bead — **the bead description IS the plan** (no `PLAN.md`).
-2. `jj new trunk()` — working copy is the change; auto-snapshotted as it edits.
+2. The workspace's working copy (`@`) is **already** an empty change on
+   `trunk()` (created by `jj workspace add -r trunk()`); edits auto-snapshot
+   into it. No `jj new` is needed — a redundant `jj new trunk()` would strand a
+   phantom empty commit that `--skip-emptied` does **not** clean (it only
+   abandons commits *emptied by* the rebase, not ones empty beforehand).
 3. Do the TDD work. (jj agent-safety profile applies: `--no-pager`, `--git`
    diffs, `-m` always, edit conflict markers not `jj resolve`, change-IDs not
    commit-hashes, `jj git fetch` at task start.)
 4. `jj commit -m "<type>(<bead-id>): <title>"` → stable change-id.
 5. Return change-id to the orchestrator, which records it:
-   `bd update <bead-id> --status in_review` + pin the change-id (label
-   `jj-change:<id>` or a note).
+   `bd update <bead-id> --status in_progress` + pin the change-id as the
+   canonical `jj-change:<id>` **label** (queryable; one storage mechanism, not
+   "label or note"). A custom `in_review` status MAY be configured later to
+   distinguish "awaiting verify" from "in flight"; it is not a built-in.
 
 ### 5.1 The spine: bead ↔ change-id
 
-A single pointer (each bead carries its jj change-id) collapses three GSD
-subsystems into one:
+A single pointer (each bead carries its jj change-id in the `jj-change:<id>`
+label) collapses three GSD subsystems into one:
 
 - **Recovery** — verify fails → `jj abandon $(change-id)` + `bd reopen`.
 - **Audit** — the PR body is generated from the epic's closed beads, each
@@ -156,8 +163,9 @@ subsystems into one:
 
 Epic done → `jj bookmark set <epic> -r @` → `jj git push -b <epic>` →
 `gh pr create`, with the PR body assembled from the epic's closed beads. After
-squash-merge: `jj git fetch && jj rebase -o main --skip-emptied &&
-jj bookmark delete <epic>`.
+squash-merge: `jj git fetch && jj rebase -b @ -o main --skip-emptied &&
+jj bookmark delete <epic>` (`-b @` explicit — never `-r @`, which truncates
+multi-pick chains).
 
 ## 7. Engine: Go
 
