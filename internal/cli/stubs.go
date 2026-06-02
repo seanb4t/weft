@@ -10,5 +10,3 @@ import "github.com/spf13/cobra"
 // shed/ws verbs in Tasks 6–7 (this file is deleted then).
 
 func (app *App) newShedCmd() *cobra.Command { return &cobra.Command{Use: "shed"} }
-
-func (app *App) newWsCmd() *cobra.Command { return &cobra.Command{Use: "ws"} }
