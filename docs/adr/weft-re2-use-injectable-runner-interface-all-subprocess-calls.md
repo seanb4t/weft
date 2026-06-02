@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- markdownlint-disable MD013 -->
 <!-- adr-render: source=bd:weft-re2; do not edit manually; use `/adr update weft-re2` -->
 
