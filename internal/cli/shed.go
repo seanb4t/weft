@@ -31,6 +31,12 @@ func (a *App) newShedFormCmd() *cobra.Command {
 			if epic == "" {
 				return exit.Invocationf("--epic is required")
 			}
+			// Guard the cap explicitly: bd treats `--limit 0` as UNLIMITED, so
+			// --max 0 (or negative) would silently invert the dial from "cap the
+			// wave" to "no cap". Reject it as an invocation error.
+			if max < 1 {
+				return exit.Invocationf("--max must be >= 1 (got %d)", max)
+			}
 			res, err := run.BD(a.Runner, "ready", "--parent", epic, "--limit", strconv.Itoa(max), "--json")
 			if err != nil {
 				return exit.Hardf("bd ready could not run: %v", err)
@@ -54,8 +60,8 @@ func (a *App) newShedFormCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&epic, "epic", "", "epic bead-id scoping the ready set (required)")
-	// --max is the parallelism dial; its config-file default is seam 3. Plan-1
-	// uses a fixed default of 5.
+	// --max is the parallelism dial. A configurable default (via .weft/config.toml)
+	// is deferred to seam 3; for now the default is a fixed 5.
 	c.Flags().IntVar(&max, "max", 5, "max wave size (parallelism dial)")
 	return c
 }

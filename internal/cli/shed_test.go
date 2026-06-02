@@ -1,4 +1,7 @@
 // internal/cli/shed_test.go
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Weft Contributors
+
 package cli
 
 import (
@@ -44,5 +47,40 @@ func TestShedFormEmptyWaveEmitsJSONArrayNotNull(t *testing.T) {
 	}
 	if s := out.String(); !strings.Contains(s, `"wave": []`) {
 		t.Errorf("empty wave must serialize as [], not null: %q", s)
+	}
+}
+
+func TestShedFormNonZeroBdExitIsHardFailure(t *testing.T) {
+	fake := &scriptedRunner{res: run.Result{Code: 1, Stderr: "bd: unknown epic"}}
+	_, err := newTestCmd(fake, "shed", "form", "--epic", "weft-hjx")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("non-zero bd exit should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "bd: unknown epic") {
+		t.Errorf("hard-failure error should surface bd stderr, got %v", err)
+	}
+}
+
+func TestShedFormRunnerErrorIsHardFailure(t *testing.T) {
+	_, err := newTestCmd(errRunner{}, "shed", "form", "--epic", "weft-hjx")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("bd that cannot start should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+func TestShedFormMaxMustBePositive(t *testing.T) {
+	_, err := newTestCmd(&scriptedRunner{}, "shed", "form", "--epic", "weft-hjx", "--max", "0")
+	if got := exit.Code(err); got != 1 {
+		t.Fatalf("--max 0 should be an invocation error (exit 1), got %d (err=%v)", got, err)
+	}
+}
+
+func TestShedFormPassesMaxAsLimit(t *testing.T) {
+	fake := &scriptedRunner{res: run.Result{Stdout: `[]`, Code: 0}}
+	if _, err := newTestCmd(fake, "shed", "form", "--epic", "weft-hjx", "--max", "3"); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if joined := strings.Join(fake.gotArgs, " "); !strings.Contains(joined, "--limit 3") {
+		t.Errorf("--max 3 should pass --limit 3 to bd, got args %v", fake.gotArgs)
 	}
 }

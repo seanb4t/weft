@@ -1,8 +1,12 @@
 // internal/cli/version_test.go
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Weft Contributors
+
 package cli
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -20,9 +24,7 @@ func newTestCmd(fake run.Runner, args ...string) (*bytes.Buffer, error) {
 }
 
 // scriptedRunner is the shared fake Runner for verb tests: it returns a fixed
-// Result and records the call. Defined here (Task 5) so Tasks 6–7 can reuse it
-// without a cross-task ordering dependency. (Unused in version_test itself —
-// that is fine; an unused test type does not fail compilation.)
+// Result and records the command it was asked to run.
 type scriptedRunner struct {
 	res     run.Result
 	gotName string
@@ -32,6 +34,14 @@ type scriptedRunner struct {
 func (s *scriptedRunner) Run(name string, args ...string) (run.Result, error) {
 	s.gotName, s.gotArgs = name, args
 	return s.res, nil
+}
+
+// errRunner is a fake Runner whose command never starts (e.g. missing binary):
+// it returns a non-nil error, the signal Exec uses for "could not run".
+type errRunner struct{}
+
+func (errRunner) Run(string, ...string) (run.Result, error) {
+	return run.Result{}, errors.New("exec: command not found")
 }
 
 func TestVersionText(t *testing.T) {

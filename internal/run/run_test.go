@@ -1,4 +1,7 @@
 // internal/run/run_test.go
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Weft Contributors
+
 package run
 
 import "testing"
