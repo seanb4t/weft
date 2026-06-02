@@ -229,7 +229,12 @@ Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
 - Conflict-resolution UX when a wave produces first-class conflicts —
   **designed:** [`docs/seams/04-conflict-resolution.md`](seams/04-conflict-resolution.md)
   (`weft-hjx.4`).
-- Which GSD command/agent markdown ports over as reference drafts.
+- Which GSD command/agent markdown ports over as reference drafts —
+  **designed:** [`docs/seams/05-gsd-markdown-ports.md`](seams/05-gsd-markdown-ports.md)
+  (`weft-hjx.5`).
+
+**All five open seams are now designed.** Each has its own `design-reviewer`
+verdict; see the linked sub-specs.
 
 ## Attribution
 
