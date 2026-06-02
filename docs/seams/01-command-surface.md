@@ -25,7 +25,7 @@ This seam resolves two non-blocking findings deferred from the design.md
 - **(b)** the wave-member integration tiebreaker.
 
 Out of scope (other seams): how planning emits beads (seam 2); workspace
-lifecycle internals — stale handling, crash cleanup, `.weft-workspaces/` layout
+lifecycle internals — stale handling, crash cleanup, `<repo>_worktrees/` layout
 (seam 3); conflict-resolution UX (seam 4); GSD markdown ports (seam 5).
 
 ## 2. Granularity: hybrid
@@ -168,8 +168,9 @@ These are *deletions* the substrate earns, not omissions:
 - The `--pick <path>` path grammar (dot/bracket; array indexing).
 - Error taxonomy detail (the `--json-errors` object shape; the `1` vs `2` split
   per failure class).
-- Where the parallelism dial default lives (flag vs config) — coupled to
-  seam 3's `.weft-workspaces/` config.
+- Where the parallelism dial default lives (flag vs config) — **resolved in
+  [seam 3](03-workspace-lifecycle.md):** `shed.max` in `.weft/config.toml`,
+  `--max` overrides.
 
 ## Attribution
 

@@ -32,7 +32,7 @@ per-worktree recovery sentinel file. Most of it dissolves on Weft's substrate:
 | GSD mechanism | Why it exists | Weft |
 |---|---|---|
 | ff-merge → remove → delete-branch cleanup tail | git worktrees need merge-back; each has a temp branch | `jj workspace forget` + `rm -rf`. Shared commit graph: the change already exists, no merge, no branch. |
-| **Ancestry guard** (only reap merged worktrees) | `git worktree remove` of unmerged work **loses it** | **Deleted.** `jj workspace forget` is non-destructive — the change stays in the graph (recoverable by change-id). Reaping never loses work. |
+| **Ancestry guard** (only reap merged worktrees) | `git worktree remove` of unmerged work **loses it** | **Deleted.** `jj workspace forget` is non-destructive — committed changes stay full graph citizens (recoverable by change-id), and the forget is `jj undo`-able. Reaping a *sealed* pick never loses work. (Grounded: deepwiki `jj-vcs/jj` — `forget` = `remove_wc_commit(ws)` in one transaction; only an **empty** `@` is abandoned.) |
 | Recovery sentinel (`.recovery-pending.json`) | durable "a worktree was created" record | **Deleted.** The bead *is* the sentinel: `status=in_progress` + `jj-change:<id>` label (§5.1). |
 | mtime staleness for crash detection | no external source of task truth | **Deleted.** Crash detection is bead-state reconciliation (§5). |
 | PID-liveness guard | don't reap a running agent | **Kept** — the one guard that survives, as a race guard only (§5). |
@@ -53,7 +53,9 @@ reaping (§5), stale handling (§6), creation/parallelism (§7).
 - **Dot caveat:** bead-ids contain dots (`weft-hjx.1`). The implementation MUST
   confirm jj accepts dotted workspace names; if not, apply a documented,
   reversible sanitization (e.g. `.` → `__`) so the name ↔ bead-id mapping stays
-  bijective.
+  bijective. **If sanitization is in effect, the reap loop (§5) reads
+  `bead = desanitize(ws.name)`**, not `ws.name` literally — the inverse mapping
+  is part of the join.
 
 ## 4. Lifecycle & the ordering invariant
 
@@ -68,8 +70,12 @@ A pick's workspace moves through:
 **Ordering invariant (refines seam 1 `shed isolate`):** set the bead
 `in_progress` **before** `jj workspace add`. Consequences:
 
-- A crash *between* the two leaves an `in_progress` bead with **no** workspace
-  — `weft resume` simply re-dispatches it. Nothing to reap, nothing lost.
+- A crash *between* the two leaves an `in_progress` bead with **no** workspace.
+  `weft resume` (read-only, seam 1 §4.5) **surfaces** it as in-flight; recovery
+  is then an *explicit* reset to `open` (`pick redo`, which tolerates a missing
+  `jj-change` label, or a bare `bd update --status open`), after which the next
+  `shed form` re-picks it. `resume` never re-dispatches by side-effect. Nothing
+  to reap, nothing lost.
 - There is never a window where a workspace exists while its bead still looks
   reapable (`status != in_progress`). This removes the need for an age-based
   race guard.
@@ -84,16 +90,23 @@ Crash recovery is **bead-state reconciliation**, not filesystem archaeology.
 ```
 weft reap [--epic E]          # reconcile jj workspace list ↔ bead state
   for ws in `jj workspace list` (excluding default):
-    bead = ws.name
+    bead = desanitize(ws.name)             # §3: name is the join key
     if bead.status != in_progress:        → orphan      → reap
-    elif bead in active_wave_manifest:     → in-use      → skip
-    elif executor_live(bead):              → in-use      → skip   # the one guard
+    elif bead in active_wave:              → in-use      → skip   # fast-skip (see below)
+    elif executor_live(bead):              → in-use      → skip   # the authoritative guard
     else:                                  → crashed     → reap
   reap = jj workspace forget <name> + rm -rf <path>
 ```
 
-- **No ancestry guard** — `forget` is non-destructive; the change survives in
-  the graph. Reaping is always safe.
+- **`active_wave`** is the in-memory bead-id set of the wave the orchestrator is
+  currently driving. At the primary entry points — orchestrator startup and
+  `resume` — no wave is in flight, so it is **empty** and the check is a no-op;
+  it exists only as a cheap fast-skip if `reap` is ever invoked mid-wave.
+  `executor_live` is the authoritative guard, so correctness never depends on
+  `active_wave` being populated.
+- **No ancestry guard** — `forget` is non-destructive (§2): a *sealed* pick is a
+  full graph citizen; an unsealed crash leaves at worst an empty `@` (abandoned)
+  or a recoverable snapshot commit. Reaping is always safe.
 - **No sentinel, no mtime** — the bead is the record; status is the signal.
 - **The single guard is liveness** (`executor_live`): don't reap a workspace
   whose executor is actively running. Its exact mechanism (PID file written at
