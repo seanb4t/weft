@@ -5,10 +5,11 @@
 
 # Seam 2 — Planning → warp emission
 
-> Status: **exploratory design**, captured from a brainstorming session.
-> Sub-spec of [`docs/design.md`](../design.md) §9 open seam 2. Tracked as bead
-> `weft-hjx.3` (child of `weft-hjx`). Not yet `design-reviewer`-approved. No
-> implementation exists.
+> Status: **design-reviewer READY** (round 3). Sub-spec of
+> [`docs/design.md`](../design.md) §9 open seam 2. Tracked as bead `weft-hjx.3`
+> (child of `weft-hjx`). Rounds 1–3 findings fixed inline (re-plan identity via
+> `weft-ref:` labels; bd-command grounding citations; verb cross-refs). No
+> implementation exists yet.
 
 ## 1. Scope
 
@@ -135,7 +136,7 @@ Extends the [seam 1](01-command-surface.md) surface.
 | Verb | Kind | Wraps | Notes |
 |---|---|---|---|
 | `plan check <file>` | thin | schema + acceptance validation of `warp-plan.json` | Exit 0 + `{valid: bool, issues: […]}`. No mutation. |
-| `plan emit <file> [--dry-run]` | coarse | derive edges (§4) → preview → `bd create --graph` | `--dry-run` prints the full warp (epic, issues, edges) **and the warn+tolerate overlaps** without mutating. Without it, emits atomically. |
+| `plan emit <file> [--dry-run]` | coarse | derive edges (§4) → preview → `bd create --graph` (first emit) / §7 `bd import` upsert (re-plan) | `--dry-run` prints the full warp (epic, issues, edges) **and the warn+tolerate overlaps** without mutating. Without it, emits atomically. On re-plan against an existing warp the §7 two-step upsert replaces `bd create --graph`. |
 
 `emit` follows the seam-1 contract: text default, `--json` envelope, engine-
 success exit codes (a warn+tolerate overlap is **data on exit 0**, not an
