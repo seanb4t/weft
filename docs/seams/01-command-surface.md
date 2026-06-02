@@ -114,7 +114,7 @@ hatches), `finish` (epic-level), plus top-level `resume`.
 | `pick seal <bead>` | thin | `jj commit -m "<type>(<bead-id>): <title>"` → change-id, write `jj-change:<id>` label | **Executor-side.** Guards two load-bearing invariants: the conventional-commit message (parsed for PR-body/audit) and the change-id label (the spine, §5.1). |
 | `pick verify <bead>` | thin | run the bead's gate | Exit `0` + `{pass: bool, …}`. Verdict is data. |
 | `pick land <bead>` | thin | `bd close --suggest-next` | Happy path. The change is already in the integrated stack (`shed integrate`); landing is purely the bead-record close — there is **no per-pick bookmark** (bookmarks are epic-level, §4.4 / design.md §6). |
-| `pick redo <bead>` | coarse | `jj abandon $(jj-change)` + reopen the bead (status → `open`) | The §4.1 recovery primitive, atomic. Reopen command depends on prior state: `bd update --status open` if the bead is `in_progress` (the §5 loop verifies before close); `bd reopen` only if redoing an already-landed (closed) pick. |
+| `pick redo <bead>` | coarse | `jj abandon $(jj-change)` (skipped if no `jj-change` label yet) + reopen the bead (status → `open`) | The §4.1 recovery primitive, atomic. `jj abandon` is a no-op when the crash preceded `pick seal` (no change to abandon). Reopen depends on prior state: `bd update --status open` if the bead is `in_progress` (design.md §5 verifies before close); `bd reopen` only if redoing an already-landed (closed) pick. |
 
 ### 4.3 `weft ws …` — thin workspace escape hatches
 

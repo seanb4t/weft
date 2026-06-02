@@ -123,8 +123,10 @@ Two loops: an **orchestrator** (main context, talks to beads) and an
    scheduler.
 2. **Form a shed (wave):** take the ready set (bounded by a parallelism dial);
    members are mutually independent by construction.
-3. **Isolate + dispatch:** per bead, `jj workspace add …`, then spawn a fresh
-   executor pointed at that workspace + that bead.
+3. **Isolate + dispatch:** per bead, set the bead `in_progress` **then**
+   `jj workspace add …` (status-first ordering invariant — see
+   [seam 3](seams/03-workspace-lifecycle.md) §4), then spawn a fresh executor
+   pointed at that workspace + that bead.
 4. **Collect** each executor's reported change-id.
 5. **Integrate:** rebase the wave into a dep-ordered linear stack.
 6. **Verify** → `bd close` or `jj abandon` + `bd reopen`.
