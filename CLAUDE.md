@@ -21,6 +21,11 @@ static binary, sits next to `bd` and `jj`).
   (bead-driven) and `jj op revert`. `jj op restore` is human-gated only — it
   rewinds the global op log and stales other workspaces (jj-vcs/jj#9208).
 - **License:** Apache-2.0 with SPDX headers on all source + functional markdown.
+- **Bead sync is pre-authorized (overrides the managed Beads block's conservative
+  profile).** The agent MUST run `bd dolt push` at key moments — after creating,
+  updating, or closing beads; after pushing code; and at session close — WITHOUT
+  asking. The bead DB is local-only until synced; do not leave the warp stranded
+  on one machine. (Owner: agent, not the user.)
 
 ## Conventions (mirrors holomush)
 
