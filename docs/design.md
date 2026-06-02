@@ -5,9 +5,10 @@
 
 # Weft — Design
 
-> Status: **design-reviewer READY** (round 2). Round-1 findings addressed
-> (executor empty-commit, status mechanics, change-id storage, ship rebase).
-> §9 open seams deferred to child specs. No implementation exists yet.
+> Status: **design-reviewer READY** (round 2). All five §9 open seams are now
+> designed and `design-reviewer` READY (see `docs/seams/`). **Design phase
+> complete** — next step is `writing-plans` on the seam specs. No implementation
+> exists yet.
 
 ## 1. What Weft is
 

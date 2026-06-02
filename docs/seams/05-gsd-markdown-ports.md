@@ -5,10 +5,11 @@
 
 # Seam 5 — GSD markdown ports
 
-> Status: **exploratory design**, captured from a brainstorming session.
-> Sub-spec of [`docs/design.md`](../design.md) §9 open seam 5 (capstone).
-> Tracked as bead `weft-hjx.5` (child of `weft-hjx`). Not yet
-> `design-reviewer`-approved. No implementation exists.
+> Status: **design-reviewer READY** (round 1). Sub-spec of
+> [`docs/design.md`](../design.md) §9 open seam 5 (capstone). Tracked as bead
+> `weft-hjx.5` (child of `weft-hjx`). Round-1 minors fixed inline (§1/§8 ref;
+> install-verb hedge; `workflows/` host-dispatch note). No implementation
+> exists yet.
 
 ## 1. Scope
 
@@ -20,8 +21,8 @@ seam 4's resolver brief, the orchestrator/executor command markdown that calls
 the seam-1 verbs). The actual prompt *files* are authored during
 implementation; this seam is the plan for them.
 
-Out of scope: the engine verbs the prompts call (seams 1–4); the `weft install`
-transform internals (§7, deferred).
+Out of scope: the engine verbs the prompts call (seams 1–4); the install
+transform internals (§8, deferred).
 
 ## 2. Porting strategy: hybrid per-artifact
 
@@ -89,12 +90,19 @@ is mostly "call this verb, dispatch that agent, branch on the JSON."
     references/  jj agent-safety profile, bead↔change-id spine, TDD/verify discipline
   ```
 
+  `workflows/` holds the orchestrator bodies a command invokes (the thin
+  orchestrators of §4). These are **prompt markdown the host runtime executes**,
+  not engine-run logic — dispatch stays with the host (design.md §7, seam 1);
+  the workflow just sequences `weft`-verb calls and agent dispatches.
 - **Naming:** `/weft-*` commands, `weft-*` agents (mirrors `/gsd-*`).
-- **Runtime portability:** a `weft install --runtime <claude|codex|…>` transform
-  (the engine's analog of GSD's npx installer) rewrites the agnostic source into
-  each host's expected format/location (command-syntax form, frontmatter
-  stripping) and places it (`.claude/commands/`, etc.). Claude Code is the v1
-  reference runtime; the transform's exact rules are a §8 sub-seam.
+- **Runtime portability:** an install transform (the engine's analog of GSD's
+  npx installer) rewrites the agnostic source into each host's expected
+  format/location (command-syntax form, frontmatter stripping) and places it
+  (`.claude/commands/`, etc.). Whether this is a `weft install --runtime <r>`
+  verb or a separate tool — and its exact transform rules — is a §8 sub-seam
+  (it is **not** part of the seam-1 orchestration verb surface; it is a
+  distribution concern, not a prompt-callable verb). Claude Code is the v1
+  reference runtime.
 
 ## 6. Licensing & attribution
 
