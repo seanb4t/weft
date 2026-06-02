@@ -116,6 +116,14 @@ weft reap [--epic E]          # reconcile jj workspace list ↔ bead state
   the bead; if `shed cleanup` did not finish, the lingering workspace now has a
   *closed* bead → `status != in_progress` → reaped by the same path. No
   special-casing.
+- **Resolution workspaces are a second kind.** [Seam 4](04-conflict-resolution.md)
+  creates `<sanitized-bead-id>-resolve` workspaces for conflict resolution. The
+  reaper recognizes the `-resolve` suffix as a *kind* marker: it strips the
+  suffix, `desanitize`s the remainder to the **owning** bead-id, and applies the
+  same rule — reap unless the owning bead is `in_progress` **and** a resolver is
+  live (`executor_live`). (Bead-ids never end in `-resolve`, so the suffix is an
+  unambiguous discriminant.) `conflict finalize` reaps on the happy path; this
+  rule is the crash safety net.
 
 ### 5.1 `reap` vs `shed cleanup`
 

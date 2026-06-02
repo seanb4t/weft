@@ -73,12 +73,29 @@ multi-step), the agent owns the merge judgment.
 
 | Verb | Kind | Wraps | Notes |
 |---|---|---|---|
-| `conflict open <lowest>` | coarse | `jj new <lowest>` in a `<bead-id>-resolve` workspace (seam 3 layout/sanitization) + emit the conflicting beads (the "sides") and `paths` as resolver context | Sets `ui.conflict-marker-style = diff` for the workspace (§5). Output is the resolver's brief: which beads collided, on which paths, what each intended. |
-| `conflict finalize <lowest>` | coarse | `jj diff --git` (assert only the resolution shows) → `jj squash` (fold into `<lowest>`, heal descendants) → re-query `conflicts()` + reap the resolve workspace | Exit 0 + `{healed: [...], remaining_conflicts: [...]}`. A still-conflicted result is **data**, not an error (seam-1 contract). |
+| `conflict open <lowest>` | coarse | `jj new <lowest>` in a resolution workspace (§4.1) + emit the conflicting beads (the "sides") and `paths` as resolver context | Sets `ui.conflict-marker-style = diff` for the workspace (§5). Output is the resolver's brief: which beads collided, on which paths, what each intended. |
+| `conflict finalize <lowest>` | coarse | `jj diff --git` (assert only the resolution shows) → `jj squash --into <lowest>` (fold the resolution in, heal descendants) → re-query `conflicts()` + reap the resolution workspace | `--into <lowest>` is **explicit** (not bare `jj squash`) so the fold targets the conflicted ancestor even if `@` is not its direct child. Exit 0 + `{healed: [...], remaining_conflicts: [...]}`. A still-conflicted result is **data**, not an error (seam-1 contract). |
 
 There is no `conflict list` verb — the conflict set comes from `shed integrate`'s
 `conflicts[]` and from `weft resume` (which already surfaces unresolved
 conflicts, seam 1 §4.5). `jj log -r 'conflicts()'` is the ground truth.
+
+### 4.1 Resolution workspace identity & reaping
+
+The resolution workspace is a **second workspace kind** (seam 3's reaper is now
+kind-aware):
+
+- **Name:** `<sanitized-bead-id>-resolve` (the lowest conflicted ancestor's
+  bead-id, sanitized per seam 3 §3, plus a `-resolve` suffix). Path follows
+  seam 3 layout: `../<repo>_worktrees/<sanitized-bead-id>-resolve/`.
+- **Reaper join:** seam 3's `weft reap` recognizes the `-resolve` suffix, strips
+  it, `desanitize`s the remainder to the **owning** bead-id, and reaps unless
+  that bead is `in_progress` with a live resolver. Bead-ids never end in
+  `-resolve`, so the suffix is an unambiguous kind discriminant.
+- **Lifecycle:** `conflict finalize` reaps the workspace on the happy path
+  (`jj workspace forget` + `rm -rf`, seam 3); an interrupted `finalize` leaves
+  an orphan that `weft reap` collects via the rule above. No new lifecycle
+  machinery — only the kind-aware name parse.
 
 ## 5. Marker style & agent safety
 
@@ -94,7 +111,10 @@ conflicts, seam 1 §4.5). `jj log -r 'conflicts()'` is the ground truth.
   removes the markers, and returns; jj recognizes the resolution on its next
   working-copy scan.
 - The resolver follows the jj agent profile already in force (`--no-pager`,
-  `--git` diffs, change-ids not commit-hashes).
+  `--git` diffs, change-ids not commit-hashes, edit-markers-not-`jj resolve`).
+  It does not `jj commit` — it edits markers and returns; `conflict finalize`
+  does the squash — so the profile's `-m`-always and start-of-task `jj git
+  fetch` do not apply to it.
 
 ## 6. Escalation
 
@@ -111,6 +131,10 @@ a 3+-sided conflict it cannot reconcile), Weft escalates:
   change is conflict-free before `bd close`.
 - The rest of the wave is unaffected — independent picks land, and the epic
   simply cannot `finish` until the flagged conflict is cleared.
+- `weft resume` surfaces these from the **union** of jj `conflicts()` (the
+  unresolved-change ground truth) and the `bd human` flags (the escalation
+  record) — so a resuming session sees both what is conflicted and what was
+  escalated for a decision.
 
 Escalation is **not** automatic abandonment: the conflicted change and its
 markers persist (jj records conflicts in the commit), so a human can resolve at
@@ -145,10 +169,17 @@ seam 3's "reaping is a sub-step, not a bead."
 ## 9. Cross-spec note
 
 Introduces the `weft conflict` verb group (`open`, `finalize`) — additive to the
-seam-1 surface. Reuses seam 3's workspace lifecycle (creation, dot-sanitization,
-reaping) for the `<bead-id>-resolve` workspace. Consumes seam 1 `shed
-integrate`'s `conflicts[]` and is the resolution path for seam 2's tolerated
-overlaps.
+seam-1 surface. Consumes seam 1 `shed integrate`'s `conflicts[]` and is the
+resolution path for seam 2's tolerated overlaps. Two reconciliations were
+applied to keep the READY seams consistent (both updated alongside this spec):
+
+- **seam 1 `pick land`** now asserts the change is conflict-free (∉
+  `conflicts()`) before `bd close` — the §6 land-gate is a real invariant, so it
+  lives in the verb definition, not only here.
+- **seam 3 `weft reap`** is now kind-aware: it recognizes `<…>-resolve`
+  resolution workspaces (§4.1), strips the suffix to the owning bead, and reaps
+  by the same liveness rule — so an interrupted `conflict finalize` never
+  strands a workspace the reaper can't classify.
 
 ## Attribution
 
