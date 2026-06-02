@@ -41,7 +41,10 @@ The emission primitive already exists in the brain: **`bd create --graph
 <json>`** atomically creates an epic + issues + dependency edges from one file
 (`bd import` JSONL upsert is the incremental counterpart). `weft plan emit`
 wraps it with validation, dep derivation, and a dry-run gate — it does not
-reinvent graph creation.
+reinvent graph creation. (Grounded via `--help` this session: `bd create
+--graph` and `--labels`/`--id` exist; `bd import` is JSONL upsert ingesting the
+`bd export` schema; `bd supersede <id> --with <new>` auto-closes the superseded
+issue with a reference. The formal `bd create --graph` JSON schema is §8.)
 
 ## 3. `warp-plan.json`
 
@@ -64,12 +67,15 @@ is the source of truth** (there is no persisted `ROADMAP.md`).
 ```
 
 - `ref` is a **stable, plan-local identity key** — the author MUST keep it
-  stable across revisions, because it is the durable plan↔warp join (§7). On
-  emit, `weft plan emit` assigns each pick a bead-id via `bd create --graph`,
-  rewrites `needs` edges to those bead-ids, and **stamps a `weft-ref:<ref>`
-  label** on each created bead. The `ref → bead-id` mapping therefore lives in
-  the warp itself (beads is the brain) — no sidecar state file, and the plan
-  file is never mutated post-emit.
+  stable across revisions, because it is the durable plan↔warp join (§7). The
+  `bd create --graph` input expresses `needs` edges **and** the `weft-ref:<ref>`
+  / `phase:*` labels per pick, keyed by `ref`; `bd create --graph` then assigns
+  bead-ids and resolves those ref-keyed edges atomically during creation (no
+  bead-id chicken-and-egg — refs are the edge keys *in the input*, ids exist
+  only *after*). The resulting `ref → bead-id` mapping lives in the warp itself
+  via the `weft-ref:<ref>` labels (beads is the brain) — no sidecar state file,
+  and the plan file is never mutated post-emit. (The exact `bd create --graph`
+  field mapping, incl. per-node labels, is §8.)
 - `description` carries the whole plan for that pick — there is no separate
   `PLAN.md` (design.md §5: the bead description *is* the plan).
 - `files` is the pick's declared file-ownership estimate; it drives §4 dep
@@ -160,20 +166,26 @@ risk — the warp's *tension* (its dep structure) is what makes the weave safe.
 
 A spec evolves; the warp must follow without being rebuilt from scratch:
 
-- **Additive / changed picks:** re-run `weft plan emit`. It rebuilds the
-  `ref → bead-id` map by reading the epic's `weft-ref:<ref>` labels (§3 —
-  identity lives in beads), then upserts via `bd import`: a `ref` with no
-  matching label creates a new pick; a matched `ref` updates that bead in place.
-  Idempotent — re-emitting an unchanged plan is a no-op. (This is why `ref`
-  values must be stable: they are the upsert key.)
+- **Additive / changed picks:** re-run `weft plan emit`. Two steps, because
+  `bd import` upserts by **issue id**, not by label: (1) `weft` reads the epic's
+  beads and their `weft-ref:<ref>` labels to build the `ref → bead-id` map (§3 —
+  identity lives in beads); (2) it writes an import record per pick carrying the
+  resolved bead-id for a matched `ref` (→ update) or none for an unmatched `ref`
+  (→ create), and `bd import` applies it. Idempotent — re-emitting an unchanged
+  plan is a no-op. (This is why `ref` values must be stable: they are the
+  resolution key.)
 - **Removed picks:** a pick dropped from the plan is **superseded**
-  (`bd supersede`), never silently deleted — its history and any landed change
-  stay auditable. The exact reconciliation (diff the plan against the live epic)
-  is a §8 sub-seam.
+  (`bd supersede <id> --with <new>`, which auto-closes the old issue with a
+  reference — grounded §2), never silently deleted, so its history and any
+  landed change stay auditable. The exact reconciliation (diff the plan against
+  the live epic) is a §8 sub-seam.
 
 ## 8. Open sub-seams (next design steps)
 
-- `warp-plan.json` JSON Schema (formal) + the `bd create --graph` input mapping.
+- `warp-plan.json` JSON Schema (formal) + the `bd create --graph` input mapping
+  (incl. how per-node labels and ref-keyed edges are expressed).
+- Confirm beads label constraints (format / reserved namespace / count) accept
+  the colon-namespaced families `weft-ref:<ref>`, `phase:*`, `jj-change:<id>`.
 - `[plan].structural` default globs + `plan.overlap_max` default value.
 - Declared-vs-actual file drift detection (compare `jj diff` paths to `files`).
 - `has_checkpoint` representation (GSD's user-interaction gate → a bead flag /
