@@ -52,4 +52,4 @@ Methodology and several command/agent prompts are adapted from GSD Core (MIT);
 see [docs/design.md](docs/design.md) for attribution.
 
 [jj]: https://github.com/jj-vcs/jj
-[beads]: https://github.com/steveyegge/beads
+[beads]: https://github.com/gastownhall/beads

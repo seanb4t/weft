@@ -212,4 +212,4 @@ Methodology and (eventually) several command/agent prompts are adapted from
 Apache-2.0.
 
 [jj]: https://github.com/jj-vcs/jj
-[beads]: https://github.com/steveyegge/beads
+[beads]: https://github.com/gastownhall/beads
