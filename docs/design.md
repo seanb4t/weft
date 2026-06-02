@@ -82,7 +82,8 @@ contorted.
   bead, bisectable, driven by the bead DAG.
 - **Conflicts** land as first-class objects instead of blocking the wave;
   resolved post-hoc at the lowest conflicted ancestor (`jj new <lowest>` → edit
-  markers → `jj squash`, which auto-heals descendants).
+  markers → `jj squash`, which auto-heals descendants). Resolution UX:
+  [seam 4](seams/04-conflict-resolution.md).
 
 The net effect is a **deletion**: GSD's entire `worktree-safety.cjs` merge-back
 choreography collapses to `jj workspace add` + `jj rebase --skip-emptied` +
@@ -225,7 +226,9 @@ Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
   `<repo>_worktrees/` layout — **designed:**
   [`docs/seams/03-workspace-lifecycle.md`](seams/03-workspace-lifecycle.md)
   (`weft-hjx.2`).
-- Conflict-resolution UX when a wave produces first-class conflicts.
+- Conflict-resolution UX when a wave produces first-class conflicts —
+  **designed:** [`docs/seams/04-conflict-resolution.md`](seams/04-conflict-resolution.md)
+  (`weft-hjx.4`).
 - Which GSD command/agent markdown ports over as reference drafts.
 
 ## Attribution
