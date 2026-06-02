@@ -72,7 +72,8 @@ share one working copy. So each parallel executor gets its own
 `jj workspace add`. jj's payoff is on the **integration** side, where GSD is most
 contorted.
 
-- **Isolation:** `jj workspace add ../.weft-workspaces/<bead-id> --name <bead-id> -r trunk()`
+- **Isolation:** `jj workspace add ../<repo>_worktrees/<bead-id> --name <bead-id> -r trunk()`
+  (layout, identity, and reaping: [seam 3](seams/03-workspace-lifecycle.md))
 - **Integration:** all workspaces share one commit graph, so each executor's
   change already exists the moment it commits — no worktree merge-back. The
   orchestrator topologically orders the wave's change-ids by the bead dep graph
@@ -217,7 +218,9 @@ Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
 - How planning emits beads/warp (the `/weft-new-project` equivalent) instead of
   `ROADMAP.md`.
 - Workspace lifecycle details: stale handling, cleanup on crash, the
-  `.weft-workspaces/` layout.
+  `<repo>_worktrees/` layout — **designed:**
+  [`docs/seams/03-workspace-lifecycle.md`](seams/03-workspace-lifecycle.md)
+  (`weft-hjx.2`).
 - Conflict-resolution UX when a wave produces first-class conflicts.
 - Which GSD command/agent markdown ports over as reference drafts.
 
