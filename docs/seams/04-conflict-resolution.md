@@ -5,10 +5,11 @@
 
 # Seam 4 — Conflict-resolution UX
 
-> Status: **exploratory design**, captured from a brainstorming session.
-> Sub-spec of [`docs/design.md`](../design.md) §9 open seam 4. Tracked as bead
-> `weft-hjx.4` (child of `weft-hjx`). Not yet `design-reviewer`-approved. No
-> implementation exists.
+> Status: **design-reviewer READY** (round 2). Sub-spec of
+> [`docs/design.md`](../design.md) §9 open seam 4. Tracked as bead `weft-hjx.4`
+> (child of `weft-hjx`). Rounds 1–2 findings fixed inline (pick-land gate into
+> seam 1; resolution-workspace kind into seam 3 reaper; explicit squash --into).
+> No implementation exists yet.
 
 ## 1. Scope
 
@@ -131,10 +132,11 @@ a 3+-sided conflict it cannot reconcile), Weft escalates:
   change is conflict-free before `bd close`.
 - The rest of the wave is unaffected — independent picks land, and the epic
   simply cannot `finish` until the flagged conflict is cleared.
-- `weft resume` surfaces these from the **union** of jj `conflicts()` (the
-  unresolved-change ground truth) and the `bd human` flags (the escalation
-  record) — so a resuming session sees both what is conflicted and what was
-  escalated for a decision.
+- `weft resume` (seam 1 §4.5) surfaces both signals in their **respective
+  fields** — an unresolved conflicted change under `conflicts:` (the jj
+  `conflicts()` ground truth), a `bd human`-escalated pick under `blocked:` — so
+  a resuming session sees both what is conflicted and what was escalated, without
+  conflating them in one field.
 
 Escalation is **not** automatic abandonment: the conflicted change and its
 markers persist (jj records conflicts in the commit), so a human can resolve at

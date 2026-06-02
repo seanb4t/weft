@@ -90,7 +90,10 @@ Crash recovery is **bead-state reconciliation**, not filesystem archaeology.
 ```
 weft reap [--epic E]          # reconcile jj workspace list ↔ bead state
   for ws in `jj workspace list` (excluding default):
-    bead = desanitize(ws.name)             # §3: name is the join key
+    if ws.name endswith "-resolve":        # resolution kind (seam 4 §4.1)
+      bead = desanitize(ws.name without "-resolve")   # owning bead
+    else:                                  # executor kind
+      bead = desanitize(ws.name)           # §3: name is the join key
     if bead.status != in_progress:        → orphan      → reap
     elif bead in active_wave:              → in-use      → skip   # fast-skip (see below)
     elif executor_live(bead):              → in-use      → skip   # the authoritative guard
