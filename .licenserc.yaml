@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Weft Contributors
+#
+# license-eye (Apache SkyWalking Eyes) config. Licenses code AND functional
+# markdown (specs/plans/ADRs/rules). User-facing rendered content is excluded.
+header:
+  license:
+    content: |
+      SPDX-License-Identifier: Apache-2.0
+      Copyright 2026 Weft Contributors
+    # Recognize a pre-existing bare SPDX header (no Copyright line) so
+    # `header fix` does not prepend a duplicate. Copyright line is optional.
+    pattern: |
+      SPDX-License-Identifier: Apache-2\.0
+  paths:
+    - "cmd/**"
+    - "internal/**"
+    - "pkg/**"
+    - "scripts/**"
+    - "docs/**"
+    - ".claude/rules/**"
+    - "*.md"
+  paths-ignore:
+    - "**/*.pb.go"
+    - "vendor/**"
+    - "AGENTS.md"
+    - "**/.gitkeep"
+    - "**/*.golden"
+    - "**/*.tsv"
+  language:
+    Markdown:
+      extensions: [".md"]
+      comment_style_id: AngleBracket
+  comment: on-failure

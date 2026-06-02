@@ -1,0 +1,71 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/weft
+/cmd/weft/weft
+/dist/
+
+# Test binary
+*.test
+
+# Go coverage
+*.out
+.coverdata/
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+/build/
+/bin/
+
+# Local development
+*.local
+*.log
+
+# Temporary files
+tmp/
+.tmp/
+
+# go-task checksum cache
+.task/
+
+# worktrees / jj workspaces
+.worktrees/
+.weft-workspaces/
+
+# Superpowers brainstorming artifacts
+.superpowers/
+
+# Stray beads export in worktree root (belongs under .beads/ only)
+/issues.jsonl
+
+# Beads local state
+.beads/metadata.json
+.beads-credential-key
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
+
+# Claude Code local-scope agent memory (never committed)
+.claude/agent-memory-local/
