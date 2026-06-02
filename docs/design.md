@@ -205,7 +205,12 @@ Mirrors the holomush Go setup:
 
 ## 9. Open seams (next design steps)
 
-- The Go engine's command surface (the stable verbs the prompts call).
+Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
+`weft-hjx`.
+
+- The Go engine's command surface (the stable verbs the prompts call) —
+  **designed:** [`docs/seams/01-command-surface.md`](seams/01-command-surface.md)
+  (`weft-hjx.1`).
 - How planning emits beads/warp (the `/weft-new-project` equivalent) instead of
   `ROADMAP.md`.
 - Workspace lifecycle details: stale handling, cleanup on crash, the
