@@ -59,6 +59,10 @@ dolt-pprof/
 # Backup data (auto-exported JSONL, local-only)
 backup/
 
+# Agent-interaction audit log (local telemetry; Dolt is the source of truth).
+# Tracking it here churns every PR — keep it local, like issues.jsonl.
+interactions.jsonl
+
 # Per-project environment file (Dolt connection config, GH#2520)
 .env
 
