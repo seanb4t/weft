@@ -63,8 +63,13 @@ is the source of truth** (there is no persisted `ROADMAP.md`).
 }
 ```
 
-- `ref` is a provisional, plan-local id; `weft plan emit` maps each `ref` to the
-  bead-id `bd create --graph` assigns, and rewrites `needs` edges accordingly.
+- `ref` is a **stable, plan-local identity key** — the author MUST keep it
+  stable across revisions, because it is the durable plan↔warp join (§7). On
+  emit, `weft plan emit` assigns each pick a bead-id via `bd create --graph`,
+  rewrites `needs` edges to those bead-ids, and **stamps a `weft-ref:<ref>`
+  label** on each created bead. The `ref → bead-id` mapping therefore lives in
+  the warp itself (beads is the brain) — no sidecar state file, and the plan
+  file is never mutated post-emit.
 - `description` carries the whole plan for that pick — there is no separate
   `PLAN.md` (design.md §5: the bead description *is* the plan).
 - `files` is the pick's declared file-ownership estimate; it drives §4 dep
@@ -131,6 +136,10 @@ success exit codes (a warn+tolerate overlap is **data on exit 0**, not an
 error). The dry-run preview is the human approval gate before the warp is
 written — mirrors how this very project is being planned.
 
+`emit` is re-runnable: edge derivation is pure computation, and the only
+mutation is the atomic `bd create --graph` (or the §7 upsert on re-plan). An
+interruption before that single call leaves no partial warp; re-running is safe.
+
 ## 6. Warp structure
 
 The emitted graph:
@@ -139,8 +148,9 @@ The emitted graph:
   one PR). One `warp-plan.json` → one epic.
 - **issues** = picks (one bead → one pick → one jj change, per the vocabulary).
 - **edges** = explicit `needs` ∪ derived file-overlap edges (§4).
-- **labels** = `phase:*` and any authored labels; the `jj-change:<id>` label is
-  added later at execution time (seam 1 `pick seal`), not at emission.
+- **labels** = `phase:*`, any authored labels, and the `weft-ref:<ref>` identity
+  label stamped at emit (§3/§7); the `jj-change:<id>` label is added later at
+  execution time (seam 1 `pick seal`), not at emission.
 
 `bd ready` then computes the sheds: because the dangerous overlaps are encoded
 as edges, the ready set at any point is parallelizable with bounded conflict
@@ -150,9 +160,12 @@ risk — the warp's *tension* (its dep structure) is what makes the weave safe.
 
 A spec evolves; the warp must follow without being rebuilt from scratch:
 
-- **Additive / changed picks:** re-run `weft plan emit` — `bd import` upsert
-  semantics create new picks and update existing ones (matched by bead-id). The
-  operation is idempotent; re-emitting an unchanged plan is a no-op.
+- **Additive / changed picks:** re-run `weft plan emit`. It rebuilds the
+  `ref → bead-id` map by reading the epic's `weft-ref:<ref>` labels (§3 —
+  identity lives in beads), then upserts via `bd import`: a `ref` with no
+  matching label creates a new pick; a matched `ref` updates that bead in place.
+  Idempotent — re-emitting an unchanged plan is a no-op. (This is why `ref`
+  values must be stable: they are the upsert key.)
 - **Removed picks:** a pick dropped from the plan is **superseded**
   (`bd supersede`), never silently deleted — its history and any landed change
   stay auditable. The exact reconciliation (diff the plan against the live epic)
