@@ -69,3 +69,6 @@ tmp/
 
 # Claude Code local-scope agent memory (never committed)
 .claude/agent-memory-local/
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/
