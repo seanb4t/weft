@@ -142,10 +142,11 @@ Two loops: an **orchestrator** (main context, talks to beads) and an
    diffs, `-m` always, edit conflict markers not `jj resolve`, change-IDs not
    commit-hashes, `jj git fetch` at task start.)
 4. `jj commit -m "<type>(<bead-id>): <title>"` → stable change-id.
-5. Return change-id to the orchestrator, which records it:
-   `bd update <bead-id> --status in_progress` + pin the change-id as the
-   canonical `jj-change:<id>` **label** (queryable; one storage mechanism, not
-   "label or note"). A custom `in_review` status MAY be configured later to
+5. Return change-id to the orchestrator, which pins it as the canonical
+   `jj-change:<id>` **label** (queryable; one storage mechanism, not "label or
+   note"). The bead is **already** `in_progress` — set at workspace-add time
+   during shed isolation (see [seam 1](seams/01-command-surface.md)), not at
+   executor return. A custom `in_review` status MAY be configured later to
    distinguish "awaiting verify" from "in flight"; it is not a built-in.
 
 ### 5.1 The spine: bead ↔ change-id
@@ -153,7 +154,9 @@ Two loops: an **orchestrator** (main context, talks to beads) and an
 A single pointer (each bead carries its jj change-id in the `jj-change:<id>`
 label) collapses three GSD subsystems into one:
 
-- **Recovery** — verify fails → `jj abandon $(change-id)` + `bd reopen`.
+- **Recovery** — verify fails → `jj abandon $(change-id)` + reopen the bead
+  (status → `open`; see [seam 1](seams/01-command-surface.md) `pick redo` for
+  the `bd update --status open` vs `bd reopen` distinction).
 - **Audit** — the PR body is generated from the epic's closed beads, each
   carrying its change-id; no `SUMMARY.md`.
 - **Resume after compaction** — a fresh session reads `bd ready`/`bd blocked` +

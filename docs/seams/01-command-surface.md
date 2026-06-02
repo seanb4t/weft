@@ -5,10 +5,11 @@
 
 # Seam 1 — Engine command surface
 
-> Status: **exploratory design**, captured from a brainstorming session.
-> Sub-spec of [`docs/design.md`](../design.md) §9 open seam 1. Tracked as bead
-> `weft-hjx.1` (child of `weft-hjx`). Not yet `design-reviewer`-approved. No
-> implementation exists.
+> Status: **design-reviewer READY** (round 1). Sub-spec of
+> [`docs/design.md`](../design.md) §9 open seam 1. Tracked as bead `weft-hjx.1`
+> (child of `weft-hjx`). Round-1 minors fixed inline (`pick land` bookmark,
+> `bd reopen` vs `--status open`, parent §5 staleness). No implementation
+> exists yet.
 
 ## 1. Scope
 
@@ -103,7 +104,7 @@ hatches), `finish` (epic-level), plus top-level `resume`.
 | `shed isolate <wave>` | coarse | per member: `jj workspace add -r trunk()` **+ `bd update --status in_progress`** | **Resolves (a):** the `open → in_progress` transition happens at isolation/dispatch time, not at executor return. |
 | `shed integrate <wave>` | coarse | topo-order members by the bead dep graph, **tiebreak bead-id lexicographic**, `jj rebase -s <change> -o <prev-tip> --skip-emptied` | **Resolves (b):** wave members are mutually independent, so the dep graph imposes no intra-wave order; lexicographic bead-id is the deterministic tiebreaker. Emits the linear `stack` + any `conflicts[]`. |
 | `shed cleanup <wave>` | coarse | per member: `jj workspace forget` + `rm -rf` | Idempotent teardown. |
-| `shed abandon <wave>` | coarse | `bd reopen` members (`in_progress → open`) + `shed cleanup` + `jj abandon` the in-flight change-ids | Bails an in-flight wave. `jj abandon` cleans working state; changes stay recoverable via `jj op log` / `jj evolog`. |
+| `shed abandon <wave>` | coarse | `bd update --status open` for members (they are `in_progress`) + `shed cleanup` + `jj abandon` the in-flight change-ids | Bails an in-flight wave. Members are `in_progress` (not closed), so the transition is `--status open`, **not** `bd reopen` (which is for closed beads). `jj abandon` cleans working state; changes stay recoverable via `jj op log` / `jj evolog`. |
 | `shed status <wave>` | thin | read member states + change-ids | Inspection. |
 
 ### 4.2 `weft pick …` — bead-level
@@ -112,8 +113,8 @@ hatches), `finish` (epic-level), plus top-level `resume`.
 |---|---|---|---|
 | `pick seal <bead>` | thin | `jj commit -m "<type>(<bead-id>): <title>"` → change-id, write `jj-change:<id>` label | **Executor-side.** Guards two load-bearing invariants: the conventional-commit message (parsed for PR-body/audit) and the change-id label (the spine, §5.1). |
 | `pick verify <bead>` | thin | run the bead's gate | Exit `0` + `{pass: bool, …}`. Verdict is data. |
-| `pick land <bead>` | coarse | `bd close` + bookmark advance | Happy path. |
-| `pick redo <bead>` | coarse | `jj abandon $(jj-change)` + `bd reopen` | The §4.1 recovery primitive, atomic. |
+| `pick land <bead>` | thin | `bd close --suggest-next` | Happy path. The change is already in the integrated stack (`shed integrate`); landing is purely the bead-record close — there is **no per-pick bookmark** (bookmarks are epic-level, §4.4 / design.md §6). |
+| `pick redo <bead>` | coarse | `jj abandon $(jj-change)` + reopen the bead (status → `open`) | The §4.1 recovery primitive, atomic. Reopen command depends on prior state: `bd update --status open` if the bead is `in_progress` (the §5 loop verifies before close); `bd reopen` only if redoing an already-landed (closed) pick. |
 
 ### 4.3 `weft ws …` — thin workspace escape hatches
 
