@@ -218,7 +218,9 @@ Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
   **designed:** [`docs/seams/01-command-surface.md`](seams/01-command-surface.md)
   (`weft-hjx.1`).
 - How planning emits beads/warp (the `/weft-new-project` equivalent) instead of
-  `ROADMAP.md`.
+  `ROADMAP.md` — **designed:**
+  [`docs/seams/02-planning-emission.md`](seams/02-planning-emission.md)
+  (`weft-hjx.3`).
 - Workspace lifecycle details: stale handling, cleanup on crash, the
   `<repo>_worktrees/` layout — **designed:**
   [`docs/seams/03-workspace-lifecycle.md`](seams/03-workspace-lifecycle.md)
