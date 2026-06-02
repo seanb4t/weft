@@ -5,8 +5,10 @@
 
 # Weft — Design
 
-> Status: **exploratory design**, captured from a brainstorming session.
-> Not yet reviewed by `design-reviewer`. No implementation exists.
+> Status: **design-reviewer READY** (round 2). All five §9 open seams are now
+> designed and `design-reviewer` READY (see `docs/seams/`). **Design phase
+> complete** — next step is `writing-plans` on the seam specs. No implementation
+> exists yet.
 
 ## 1. What Weft is
 
@@ -71,7 +73,8 @@ share one working copy. So each parallel executor gets its own
 `jj workspace add`. jj's payoff is on the **integration** side, where GSD is most
 contorted.
 
-- **Isolation:** `jj workspace add ../.weft-workspaces/<bead-id> --name <bead-id> -r trunk()`
+- **Isolation:** `jj workspace add ../<repo>_worktrees/<bead-id> --name <bead-id> -r trunk()`
+  (layout, identity, and reaping: [seam 3](seams/03-workspace-lifecycle.md))
 - **Integration:** all workspaces share one commit graph, so each executor's
   change already exists the moment it commits — no worktree merge-back. The
   orchestrator topologically orders the wave's change-ids by the bead dep graph
@@ -80,7 +83,8 @@ contorted.
   bead, bisectable, driven by the bead DAG.
 - **Conflicts** land as first-class objects instead of blocking the wave;
   resolved post-hoc at the lowest conflicted ancestor (`jj new <lowest>` → edit
-  markers → `jj squash`, which auto-heals descendants).
+  markers → `jj squash`, which auto-heals descendants). Resolution UX:
+  [seam 4](seams/04-conflict-resolution.md).
 
 The net effect is a **deletion**: GSD's entire `worktree-safety.cjs` merge-back
 choreography collapses to `jj workspace add` + `jj rebase --skip-emptied` +
@@ -121,8 +125,10 @@ Two loops: an **orchestrator** (main context, talks to beads) and an
    scheduler.
 2. **Form a shed (wave):** take the ready set (bounded by a parallelism dial);
    members are mutually independent by construction.
-3. **Isolate + dispatch:** per bead, `jj workspace add …`, then spawn a fresh
-   executor pointed at that workspace + that bead.
+3. **Isolate + dispatch:** per bead, set the bead `in_progress` **then**
+   `jj workspace add …` (status-first ordering invariant — see
+   [seam 3](seams/03-workspace-lifecycle.md) §4), then spawn a fresh executor
+   pointed at that workspace + that bead.
 4. **Collect** each executor's reported change-id.
 5. **Integrate:** rebase the wave into a dep-ordered linear stack.
 6. **Verify** → `bd close` or `jj abandon` + `bd reopen`.
@@ -132,21 +138,30 @@ Two loops: an **orchestrator** (main context, talks to beads) and an
 **Executor (fresh context, one workspace):**
 
 1. Read the bead — **the bead description IS the plan** (no `PLAN.md`).
-2. `jj new trunk()` — working copy is the change; auto-snapshotted as it edits.
+2. The workspace's working copy (`@`) is **already** an empty change on
+   `trunk()` (created by `jj workspace add -r trunk()`); edits auto-snapshot
+   into it. No `jj new` is needed — a redundant `jj new trunk()` would strand a
+   phantom empty commit that `--skip-emptied` does **not** clean (it only
+   abandons commits *emptied by* the rebase, not ones empty beforehand).
 3. Do the TDD work. (jj agent-safety profile applies: `--no-pager`, `--git`
    diffs, `-m` always, edit conflict markers not `jj resolve`, change-IDs not
    commit-hashes, `jj git fetch` at task start.)
 4. `jj commit -m "<type>(<bead-id>): <title>"` → stable change-id.
-5. Return change-id to the orchestrator, which records it:
-   `bd update <bead-id> --status in_review` + pin the change-id (label
-   `jj-change:<id>` or a note).
+5. Return change-id to the orchestrator, which pins it as the canonical
+   `jj-change:<id>` **label** (queryable; one storage mechanism, not "label or
+   note"). The bead is **already** `in_progress` — set at workspace-add time
+   during shed isolation (see [seam 1](seams/01-command-surface.md)), not at
+   executor return. A custom `in_review` status MAY be configured later to
+   distinguish "awaiting verify" from "in flight"; it is not a built-in.
 
 ### 5.1 The spine: bead ↔ change-id
 
-A single pointer (each bead carries its jj change-id) collapses three GSD
-subsystems into one:
+A single pointer (each bead carries its jj change-id in the `jj-change:<id>`
+label) collapses three GSD subsystems into one:
 
-- **Recovery** — verify fails → `jj abandon $(change-id)` + `bd reopen`.
+- **Recovery** — verify fails → `jj abandon $(change-id)` + reopen the bead
+  (status → `open`; see [seam 1](seams/01-command-surface.md) `pick redo` for
+  the `bd update --status open` vs `bd reopen` distinction).
 - **Audit** — the PR body is generated from the epic's closed beads, each
   carrying its change-id; no `SUMMARY.md`.
 - **Resume after compaction** — a fresh session reads `bd ready`/`bd blocked` +
@@ -156,8 +171,9 @@ subsystems into one:
 
 Epic done → `jj bookmark set <epic> -r @` → `jj git push -b <epic>` →
 `gh pr create`, with the PR body assembled from the epic's closed beads. After
-squash-merge: `jj git fetch && jj rebase -o main --skip-emptied &&
-jj bookmark delete <epic>`.
+squash-merge: `jj git fetch && jj rebase -b @ -o main --skip-emptied &&
+jj bookmark delete <epic>` (`-b @` explicit — never `-r @`, which truncates
+multi-pick chains).
 
 ## 7. Engine: Go
 
@@ -197,13 +213,29 @@ Mirrors the holomush Go setup:
 
 ## 9. Open seams (next design steps)
 
-- The Go engine's command surface (the stable verbs the prompts call).
+Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
+`weft-hjx`.
+
+- The Go engine's command surface (the stable verbs the prompts call) —
+  **designed:** [`docs/seams/01-command-surface.md`](seams/01-command-surface.md)
+  (`weft-hjx.1`).
 - How planning emits beads/warp (the `/weft-new-project` equivalent) instead of
-  `ROADMAP.md`.
+  `ROADMAP.md` — **designed:**
+  [`docs/seams/02-planning-emission.md`](seams/02-planning-emission.md)
+  (`weft-hjx.3`).
 - Workspace lifecycle details: stale handling, cleanup on crash, the
-  `.weft-workspaces/` layout.
-- Conflict-resolution UX when a wave produces first-class conflicts.
-- Which GSD command/agent markdown ports over as reference drafts.
+  `<repo>_worktrees/` layout — **designed:**
+  [`docs/seams/03-workspace-lifecycle.md`](seams/03-workspace-lifecycle.md)
+  (`weft-hjx.2`).
+- Conflict-resolution UX when a wave produces first-class conflicts —
+  **designed:** [`docs/seams/04-conflict-resolution.md`](seams/04-conflict-resolution.md)
+  (`weft-hjx.4`).
+- Which GSD command/agent markdown ports over as reference drafts —
+  **designed:** [`docs/seams/05-gsd-markdown-ports.md`](seams/05-gsd-markdown-ports.md)
+  (`weft-hjx.5`).
+
+**All five open seams are now designed.** Each has its own `design-reviewer`
+verdict; see the linked sub-specs.
 
 ## Attribution
 

@@ -1,0 +1,178 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+  ~ Copyright 2026 Weft Contributors
+-->
+
+# Seam 1 — Engine command surface
+
+> Status: **design-reviewer READY** (round 1). Sub-spec of
+> [`docs/design.md`](../design.md) §9 open seam 1. Tracked as bead `weft-hjx.1`
+> (child of `weft-hjx`). Round-1 minors fixed inline (`pick land` bookmark,
+> `bd reopen` vs `--status open`, parent §5 staleness). No implementation
+> exists yet.
+
+## 1. Scope
+
+The stable verbs the Go engine (`weft`) exposes for the command-markdown / host
+runtime to call. The engine is **deterministic plumbing** wrapping `bd` + `jj`
+and choreographing workspaces (design.md §7). It does **not** dispatch agents
+and does **not** write prose — the host runtime owns both.
+
+This seam resolves two non-blocking findings deferred from the design.md
+`design-reviewer` round (round 2 READY):
+
+- **(a)** the bead `open → in_progress` transition point;
+- **(b)** the wave-member integration tiebreaker.
+
+Out of scope (other seams): how planning emits beads (seam 2); workspace
+lifecycle internals — stale handling, crash cleanup, `<repo>_worktrees/` layout
+(seam 3); conflict-resolution UX (seam 4); GSD markdown ports (seam 5).
+
+## 2. Granularity: hybrid
+
+The engine's reason for existing is to **delete** GSD's choreography
+(`worktree-safety.cjs`) by absorbing it. How much it absorbs follows one rule:
+
+> **Coarse** (atomic) verbs for dangerous multi-step choreography that must not
+> be composed by a prompt; **thin** primitives as escape hatches for steps the
+> agent legitimately composes or varies.
+
+The discriminating test for each verb: *is this a dangerous multi-step
+sequence that must be atomic, or a query / single-op the agent composes
+freely?*
+
+## 3. Output contract
+
+Mirrors GSD's `gsd-tools.cjs`, validated against how the Claude Code harness
+consumes a CLI: the agent runs `weft` via Bash and gets stdout + stderr + exit
+code back as text, serving two modes simultaneously — **display/judgment**
+(reads prose) and **deterministic branching** (parses a field).
+
+| Aspect | Contract |
+|---|---|
+| Default stdout | Human-readable text (readable transcripts). |
+| `--json` | Uniform JSON envelope (deterministic branching). |
+| `--pick <path>` | Extract one field via dot/bracket path; prints the bare value. No `jq` dependency in prompts. |
+| Errors | Human text on stderr by default; `--json-errors` for a structured error object. |
+
+**Exit codes reflect whether the *engine* did its job — never the verdict of
+the work:**
+
+| Code | Meaning |
+|---|---|
+| `0` | Engine succeeded (the *work's* verdict — pass/fail, conflict/clean — is **data in the body**). |
+| `1` | Invocation error (bad args, missing workspace, unknown bead). |
+| `2` | Hard failure (underlying `jj`/`bd`/`gh` command failed). |
+
+**Handoffs are body fields on exit 0, not exit codes.** A `shed integrate` that
+produces a first-class jj conflict *succeeded* (design.md §4: conflicts are
+first-class objects, not blockers) — exit `0` with a `conflicts[]` field. A
+`pick verify` whose gate fails *ran fine* — exit `0` with `{pass: false}`. The
+prompt branches on `.conflicts` / `.pass`, keeping "the tool broke" and "the
+work needs attention" from collapsing into one number.
+
+### 3.1 Envelope shape
+
+```json
+{
+  "ok": true,
+  "verb": "shed.integrate",
+  "data": { "stack": ["q2", "x9", "k4"] },
+  "conflicts": [
+    { "bead": "weft-a2", "change": "k4",
+      "paths": ["internal/loom/rebase.go"], "lowest_ancestor": "k4" }
+  ],
+  "next": "resolve-conflicts"
+}
+```
+
+`ok`, `verb`, `data` are always present. `conflicts`, `next` are
+verb-dependent. `next` is an advisory hint (a string the prompt MAY branch on),
+never authoritative — the authoritative state is always re-derivable from `bd`
++ `jj`.
+
+## 4. The verb set
+
+Noun groups: `shed` (wave-level), `pick` (bead-level), `ws` (workspace escape
+hatches), `finish` (epic-level), plus top-level `resume`.
+
+### 4.1 `weft shed …` — the orchestrator loop
+
+| Verb | Kind | Wraps | Notes |
+|---|---|---|---|
+| `shed form --epic E [--max N]` | thin | `bd ready` ∩ epic, capped by the parallelism dial `--max` | Returns the wave (member bead-ids) as JSON. The scheduler. `--max` default deferred to seam 3 config. |
+| `shed isolate <wave>` | coarse | once: `jj git fetch`; per member: `bd update --status in_progress` **then** `jj workspace add … -r trunk()` | **Resolves (a):** the `open → in_progress` transition happens at isolation, not at executor return. Status-first ordering is the [seam 3](03-workspace-lifecycle.md) lifecycle invariant (a crash mid-isolate leaves no reapable workspace). |
+| `shed integrate <wave>` | coarse | topo-order members by the bead dep graph, **tiebreak bead-id lexicographic**, `jj rebase -s <change> -o <prev-tip> --skip-emptied` | **Resolves (b):** wave members are mutually independent, so the dep graph imposes no intra-wave order; lexicographic bead-id is the deterministic tiebreaker. Emits the linear `stack` + any `conflicts[]`. |
+| `shed cleanup <wave>` | coarse | per member: `jj workspace forget` + `rm -rf` | Idempotent teardown. |
+| `shed abandon <wave>` | coarse | `bd update --status open` for members (they are `in_progress`) + `shed cleanup` + `jj abandon` the in-flight change-ids | Bails an in-flight wave. Members are `in_progress` (not closed), so the transition is `--status open`, **not** `bd reopen` (which is for closed beads). `jj abandon` cleans working state; changes stay recoverable via `jj op log` / `jj evolog`. |
+| `shed status <wave>` | thin | read member states + change-ids | Inspection. |
+
+### 4.2 `weft pick …` — bead-level
+
+| Verb | Kind | Wraps | Notes |
+|---|---|---|---|
+| `pick seal <bead>` | thin | `jj commit -m "<type>(<bead-id>): <title>"` → change-id, write `jj-change:<id>` label | **Executor-side.** Guards two load-bearing invariants: the conventional-commit message (parsed for PR-body/audit) and the change-id label (the spine, §5.1). |
+| `pick verify <bead>` | thin | run the bead's gate | Exit `0` + `{pass: bool, …}`. Verdict is data. |
+| `pick land <bead>` | thin | assert the pick's change ∉ `conflicts()` → `bd close --suggest-next` | Happy path. The change is already in the integrated stack (`shed integrate`); landing asserts the change is **conflict-free** (never land a conflicted change — [seam 4](04-conflict-resolution.md) §6) then closes the bead. There is **no per-pick bookmark** (bookmarks are epic-level, §4.4 / design.md §6). |
+| `pick redo <bead>` | coarse | `jj abandon $(jj-change)` (skipped if no `jj-change` label yet) + reopen the bead (status → `open`) | The §4.1 recovery primitive, atomic. `jj abandon` is a no-op when the crash preceded `pick seal` (no change to abandon). Reopen depends on prior state: `bd update --status open` if the bead is `in_progress` (design.md §5 verifies before close); `bd reopen` only if redoing an already-landed (closed) pick. |
+
+### 4.3 `weft ws …` — thin workspace escape hatches
+
+`ws add <bead>` · `ws forget <bead>` · `ws list`. Single-bead isolation outside
+a formed wave. Internals (paths, stale handling) are seam 3.
+
+### 4.4 `weft finish …` — epic-level (design.md §6)
+
+*Naming:* "finishing" is the textile term for post-loom processing of cloth —
+the epic comes off the loom and is finished out into the world.
+
+| Verb | Kind | Wraps | Notes |
+|---|---|---|---|
+| `finish open <epic>` | coarse | `jj bookmark set` + `jj git push -b` + assemble PR body from the epic's closed beads + `gh pr create` | PR body generated from closed beads (§5.1 audit). |
+| `finish reconcile <epic>` | coarse | `jj git fetch` + `jj rebase -b @ -o main --skip-emptied` + `jj bookmark delete` | Post-squash-merge cleanup. `-b @` explicit (never `-r @`, which truncates chains). |
+
+### 4.5 `weft resume --epic E` — read-only projection
+
+The computed `STATE.md` (design.md §3 maps GSD's `STATE.md` →
+`bd ready`/`bd blocked` + `jj log`). Projects durable state — it never restores
+or mutates:
+
+```
+landed:    closed picks + change-ids
+in-flight: in_progress beads ↔ workspaces ↔ change-ids
+ready:     bd ready (next shed)
+blocked:   bd blocked + why
+conflicts: unresolved first-class conflicts in the stack
+```
+
+**Read-only is a hard invariant.** Even after a crash, recovery is a *separate
+explicit* `pick redo` / `shed abandon` — never an implicit resume side-effect.
+`resume --json` is also the substrate a fresh session consumes after compaction
+(§5.1) and the facts a host-side `dev-flow:handoff-prompt` renders into a
+briefing.
+
+## 5. Deliberate non-verbs
+
+These are *deletions* the substrate earns, not omissions:
+
+| Not a verb | Why |
+|---|---|
+| `weft pause` | Nothing to save — workspaces are durable jj commits and bead status is the truth. A paused wave and a crashed wave are identical to `resume`. Same deletion as GSD's `wip:` handoff commit (§3). |
+| `weft handoff` (state-save) | Identical to pause: state is always durable. |
+| agent dispatch | Host runtime owns it (§7). The engine choreographs; it never spawns. |
+| prose / briefings | Host-side (`dev-flow:handoff-prompt`); the engine emits facts (`resume --json`). |
+
+## 6. Open sub-seams (next design steps)
+
+- Per-verb input/output field schemas (the full `data` shape per verb).
+- The `--pick <path>` path grammar (dot/bracket; array indexing).
+- Error taxonomy detail (the `--json-errors` object shape; the `1` vs `2` split
+  per failure class).
+- Where the parallelism dial default lives (flag vs config) — **resolved in
+  [seam 3](03-workspace-lifecycle.md):** `shed.max` in `.weft/config.toml`,
+  `--max` overrides.
+
+## Attribution
+
+Command-surface shape adapted from **GSD Core** (`gsd-tools.cjs`), MIT-licensed,
+© its contributors. Weft is independently licensed Apache-2.0.
