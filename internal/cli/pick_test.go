@@ -176,3 +176,44 @@ func TestPickRedoSkipsAbandonWhenUnsealed(t *testing.T) {
 		t.Errorf("expected reopen even when unsealed: %v", r.calls)
 	}
 }
+
+func TestPickLandRefusesUnsealedBead(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "bd show") {
+			// No jj-change label — bead is not sealed
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":[]}]`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "pick", "land", "weft-hjx.1.1")); got != 1 {
+		t.Fatalf("landing an unsealed bead must be exit 1, got %d", got)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "bd close") {
+			t.Fatalf("must NOT bd close an unsealed bead: %v", r.calls)
+		}
+	}
+}
+
+func TestPickLandHardFailsOnConflictsCheckError(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show"):
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+		case strings.Contains(j, "conflicts()"):
+			return run.Result{Code: 1, Stderr: "boom"}
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+	if got := exit.Code(runRoot(r, "pick", "land", "weft-hjx.1.1")); got != 2 {
+		t.Fatalf("conflicts check failure must be exit 2 (Hardf), got %d", got)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "bd close") {
+			t.Fatalf("must NOT bd close when conflicts check errors: %v", r.calls)
+		}
+	}
+}

@@ -95,8 +95,11 @@ func (a *App) newPickRedoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A sealed pick has a change to abandon; an unsealed pick (crash before
+			// seal) has no jj-change label, so changeOf returned "" and we skip
+			// straight to the reopen below.
 			if change != "" {
-				// jj abandon is a no-op when the crash preceded pick seal.
+				// Abandon the sealed change and drop its now-dangling spine label.
 				if res, err := run.JJ(a.Runner, "abandon", change); err != nil {
 					return exit.Hardf("jj abandon could not run: %v", err)
 				} else if res.Code != 0 {
@@ -111,7 +114,10 @@ func (a *App) newPickRedoCmd() *cobra.Command {
 			} else if res.Code != 0 {
 				return exit.Hardf("bd update %s failed: %s", bead, strings.TrimSpace(res.Stderr))
 			}
-			data := map[string]any{"bead": bead, "abandoned": change}
+			data := map[string]any{"bead": bead}
+			if change != "" {
+				data["abandoned"] = change
+			}
 			return Emit(cmd, "pick.redo", data, fmt.Sprintf("redo %s (abandoned %q, reopened)", bead, change))
 		},
 	}
@@ -129,6 +135,9 @@ func (a *App) newPickSealCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if existing := changeFromLabels(info.Labels); existing != "" {
+				return exit.Invocationf("bead %s is already sealed (change %s); use 'weft pick redo %s' to re-seal", bead, existing, bead)
+			}
 			msg := fmt.Sprintf("%s(%s): %s", ctype, bead, info.Title)
 			if res, err := run.JJ(a.Runner, "commit", "-m", msg); err != nil {
 				return exit.Hardf("jj commit could not run: %v", err)
@@ -144,6 +153,9 @@ func (a *App) newPickSealCmd() *cobra.Command {
 				return exit.Hardf("read sealed change-id failed: %s", strings.TrimSpace(res.Stderr))
 			}
 			change := strings.TrimSpace(res.Stdout)
+			if change == "" {
+				return exit.Hardf("jj log -r @- returned an empty change-id for %s", bead)
+			}
 			if res, err := run.BD(a.Runner, "update", bead, "--add-label", jjChangeLabelPrefix+change); err != nil {
 				return exit.Hardf("bd add-label could not run: %v", err)
 			} else if res.Code != 0 {
