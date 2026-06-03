@@ -148,3 +148,85 @@ func TestPlanEmitReplanDryRunReportsDeltas(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanEmitCreateGraphNonZeroExitIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd create --graph") {
+			return run.Result{Code: 1, Stderr: "create boom"}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file)); got != 2 {
+		t.Fatalf("bd create --graph failure must be a hard error (exit 2), got %d", got)
+	}
+}
+
+func TestPlanEmitImportNonZeroExitIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "bd list") {
+			return run.Result{Stdout: `[{"id":"e.1","status":"open","labels":["weft-ref:a"]}]`, Code: 0}
+		}
+		if strings.Contains(j, "bd import") {
+			return run.Result{Code: 1, Stderr: "import boom"}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "e")); got != 2 {
+		t.Fatalf("bd import failure must be a hard error (exit 2), got %d", got)
+	}
+}
+
+func TestPlanEmitReplanListNonZeroExitIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
+			return run.Result{Code: 1, Stderr: "list boom"}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "e")); got != 2 {
+		t.Fatalf("bd list failure must be a hard error (exit 2), got %d", got)
+	}
+}
+
+func TestPlanEmitReplanMalformedListJSONIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
+			return run.Result{Stdout: "not json at all", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "e")); got != 2 {
+		t.Fatalf("malformed bd list JSON must be a hard error (exit 2), got %d", got)
+	}
+}
+
+func TestPlanEmitReplanEmptyListCreatesAll(t *testing.T) {
+	// An epic with no existing children: every pick is a create, import runs cleanly.
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
+			return run.Result{Stdout: `[]`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "e", "--json")
+	if err != nil {
+		t.Fatalf("empty warp should upsert-create cleanly: %v", err)
+	}
+	if !strings.Contains(out.String(), `"created"`) {
+		t.Errorf("expected created list in output: %q", out.String())
+	}
+}
+
+func TestPlanEmitRejectsDashEpic(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{} }}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic=-x")); got != 1 {
+		t.Fatalf("flag-like --epic value must be an invocation error (exit 1), got %d", got)
+	}
+}

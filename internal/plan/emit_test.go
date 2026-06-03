@@ -136,3 +136,136 @@ func TestBuildReplanRemovedRefs(t *testing.T) {
 		t.Errorf("removed = %v", rp.Removed)
 	}
 }
+
+// TestBuildReplanMatchedStatusPreserved documents the matched-bead Status
+// invariant: a matched bead's live status (always non-empty from `bd list
+// --json`) must appear verbatim in the JSONL so bd import preserves it, and
+// must NOT appear in the record for an unmatched (create) pick (omitempty).
+func TestBuildReplanMatchedStatusPreserved(t *testing.T) {
+	wp := WarpPlan{
+		Epic: Epic{Title: "E"},
+		Picks: []Pick{
+			{Ref: "a", Title: "A", Description: "a"},
+			{Ref: "b", Title: "B", Description: "b"},
+		},
+	}
+	d := Derive(wp.Picks, nil, 1)
+	existing := map[string]ExistingBead{"a": {ID: "e.1", Status: "in_progress"}}
+	rp, err := BuildReplan(wp, d, "e", existing)
+	if err != nil {
+		t.Fatalf("BuildReplan: %v", err)
+	}
+
+	lines := bytes.Split(bytes.TrimRight(rp.JSONL, "\n"), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 JSONL lines, got %d: %s", len(lines), rp.JSONL)
+	}
+
+	recFor := func(ref string) map[string]any {
+		for _, line := range lines {
+			var r map[string]any
+			if err := json.Unmarshal(line, &r); err != nil {
+				continue
+			}
+			for _, lbl := range r["labels"].([]any) {
+				if lbl == RefLabelPrefix+ref {
+					return r
+				}
+			}
+		}
+		return nil
+	}
+
+	aRec := recFor("a")
+	if aRec == nil {
+		t.Fatal("record for a not found")
+	}
+	if aRec["status"] != "in_progress" {
+		t.Errorf("matched bead a: status = %v, want in_progress", aRec["status"])
+	}
+
+	bRec := recFor("b")
+	if bRec == nil {
+		t.Fatal("record for b not found")
+	}
+	if _, ok := bRec["status"]; ok {
+		t.Errorf("unmatched bead b: status field should be absent (omitempty), got %v", bRec["status"])
+	}
+}
+
+// TestDeriveIsDeterministic verifies that Derive produces identical Edges
+// regardless of the input pick order. A stray map iteration would break this.
+func TestDeriveIsDeterministic(t *testing.T) {
+	picks := []Pick{
+		{Ref: "c", Title: "C", Needs: []string{"a", "b"}},
+		{Ref: "b", Title: "B", Needs: []string{"a"}},
+		{Ref: "a", Title: "A"},
+	}
+	reversed := []Pick{picks[2], picks[1], picks[0]}
+
+	d1 := Derive(picks, nil, 1)
+	d2 := Derive(reversed, nil, 1)
+
+	if !reflect.DeepEqual(d1.Edges, d2.Edges) {
+		t.Errorf("Derive not deterministic:\n  forward  = %v\n  reversed = %v", d1.Edges, d2.Edges)
+	}
+}
+
+// TestGraphJSONIsDeterministic verifies that GraphJSON produces byte-identical
+// output regardless of input pick order.
+func TestGraphJSONIsDeterministic(t *testing.T) {
+	picks := []Pick{
+		{Ref: "z", Title: "Z"},
+		{Ref: "m", Title: "M", Needs: []string{"a"}},
+		{Ref: "a", Title: "A"},
+	}
+	wp := WarpPlan{Epic: Epic{Title: "E", Description: "d"}, Picks: picks}
+	reversed := WarpPlan{Epic: wp.Epic, Picks: []Pick{picks[2], picks[1], picks[0]}}
+
+	d1 := Derive(wp.Picks, nil, 1)
+	d2 := Derive(reversed.Picks, nil, 1)
+
+	b1, err := GraphJSON(wp, d1)
+	if err != nil {
+		t.Fatalf("GraphJSON forward: %v", err)
+	}
+	b2, err := GraphJSON(reversed, d2)
+	if err != nil {
+		t.Fatalf("GraphJSON reversed: %v", err)
+	}
+	if !bytes.Equal(b1, b2) {
+		t.Errorf("GraphJSON not deterministic:\n  forward  = %s\n  reversed = %s", b1, b2)
+	}
+}
+
+// TestBuildReplanIsDeterministic verifies that BuildReplan produces
+// byte-identical JSONL regardless of input pick order.
+func TestBuildReplanIsDeterministic(t *testing.T) {
+	picks := []Pick{
+		{Ref: "z", Title: "Z"},
+		{Ref: "m", Title: "M", Needs: []string{"a"}},
+		{Ref: "a", Title: "A"},
+	}
+	wp := WarpPlan{Epic: Epic{Title: "E"}, Picks: picks}
+	reversed := WarpPlan{Epic: wp.Epic, Picks: []Pick{picks[2], picks[1], picks[0]}}
+
+	existing := map[string]ExistingBead{
+		"a": {ID: "e.1", Status: "open"},
+		"m": {ID: "e.2", Status: "in_progress"},
+	}
+
+	d1 := Derive(wp.Picks, nil, 1)
+	d2 := Derive(reversed.Picks, nil, 1)
+
+	rp1, err := BuildReplan(wp, d1, "e", existing)
+	if err != nil {
+		t.Fatalf("BuildReplan forward: %v", err)
+	}
+	rp2, err := BuildReplan(reversed, d2, "e", existing)
+	if err != nil {
+		t.Fatalf("BuildReplan reversed: %v", err)
+	}
+	if !bytes.Equal(rp1.JSONL, rp2.JSONL) {
+		t.Errorf("BuildReplan not deterministic:\n  forward  = %s\n  reversed = %s", rp1.JSONL, rp2.JSONL)
+	}
+}

@@ -181,7 +181,15 @@ func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]Exi
 			Dependencies: depsByRef[pk.Ref],
 		}
 		if matched {
-			rec.Status = bead.Status // preserve lifecycle state (never silently reopen)
+			// Invariant: matched beads always carry a non-empty Status because
+			// ExistingBead is populated from `bd list --json`, which always
+			// includes a status field on every live bead. `bd import` preserves
+			// whatever status is written here (never silently reopens closed
+			// work). The `omitempty` on importRecord.Status therefore only drops
+			// the field on the create path (unmatched ref, zero-value
+			// ExistingBead), which is correct: new beads get bd's default status
+			// on create rather than a stale one.
+			rec.Status = bead.Status
 			rp.Updated = append(rp.Updated, pk.Ref)
 		} else {
 			rp.Created = append(rp.Created, pk.Ref)

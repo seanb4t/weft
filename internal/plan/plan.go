@@ -87,6 +87,7 @@ func Validate(p WarpPlan) []Issue {
 			continue
 		case pk.Ref == EpicKey:
 			issues = append(issues, Issue{Ref: pk.Ref, Message: fmt.Sprintf("pick.ref %q is reserved", EpicKey)})
+			continue
 		case seen[pk.Ref]:
 			issues = append(issues, Issue{Ref: pk.Ref, Message: "duplicate pick.ref"})
 		}
@@ -96,6 +97,9 @@ func Validate(p WarpPlan) []Issue {
 		}
 		if pk.Description == "" {
 			issues = append(issues, Issue{Ref: pk.Ref, Message: "pick.description is required (the bead description is the plan)"})
+		}
+		if pk.Priority != nil && (*pk.Priority < 0 || *pk.Priority > 4) {
+			issues = append(issues, Issue{Ref: pk.Ref, Message: "pick.priority must be between 0 and 4"})
 		}
 	}
 	// needs must reference a known ref and not the pick itself (seen is complete

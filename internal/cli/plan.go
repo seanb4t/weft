@@ -39,7 +39,12 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 			}
 			d := plan.Derive(wp.Picks, a.Config.PlanStructural(), a.Config.PlanOverlapMax())
 			if epic != "" {
-				return a.planReplan(cmd, wp, d, epic, dryRun) // Task 8
+				// Guard against a flag-like epic id being misparsed by bd's own
+				// argument parser when forwarded as a subprocess argument.
+				if strings.HasPrefix(epic, "-") {
+					return exit.Invocationf("invalid --epic value %q: must not start with '-'", epic)
+				}
+				return a.planReplan(cmd, wp, d, epic, dryRun)
 			}
 			return a.planFirstEmit(cmd, wp, d, dryRun)
 		},
@@ -90,12 +95,25 @@ func writeTempPayload(pattern string, payload []byte) (string, func(), error) {
 	if err != nil {
 		return "", func() {}, exit.Hardf("temp payload file: %v", err)
 	}
+	// os.CreateTemp already opens with 0600, but the payload carries pick
+	// titles/descriptions/bead-ids and the system temp dir is world-readable
+	// (1777 on Linux), so pin owner-only perms explicitly and defensively.
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", func() {}, exit.Hardf("secure payload file: %v", err)
+	}
 	if _, err := f.Write(payload); err != nil {
 		f.Close()
 		os.Remove(f.Name())
 		return "", func() {}, exit.Hardf("write payload: %v", err)
 	}
-	f.Close()
+	// A Close error after a successful Write can signal a truncated/corrupt
+	// file; surface it rather than handing bd a bad payload.
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", func() {}, exit.Hardf("close payload: %v", err)
+	}
 	return f.Name(), func() { os.Remove(f.Name()) }, nil
 }
 
@@ -199,14 +217,12 @@ func replanText(epic string, rp plan.Replan, dry bool) string {
 	fmt.Fprintf(&b, "%s epic %s — %d updated, %d created, %d removed\n",
 		prefix, epic, len(rp.Updated), len(rp.Created), len(rp.Removed))
 	if len(rp.DeferredEdges) > 0 {
-		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — wire after creation (§8): ", len(rp.DeferredEdges))
+		parts := make([]string, len(rp.DeferredEdges))
 		for i, e := range rp.DeferredEdges {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			fmt.Fprintf(&b, "%s->%s", e.From, e.To)
+			parts[i] = fmt.Sprintf("%s->%s", e.From, e.To)
 		}
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — wire after creation (§8): %s\n",
+			len(rp.DeferredEdges), strings.Join(parts, ", "))
 	}
 	if len(rp.Removed) > 0 {
 		fmt.Fprintf(&b, "  removed ref(s) need supersede (§8): %s\n", strings.Join(rp.Removed, ", "))
@@ -231,14 +247,16 @@ func (a *App) newPlanCheckCmd() *cobra.Command {
 			data := map[string]any{"valid": len(issues) == 0, "issues": issues}
 			text := fmt.Sprintf("valid: %d pick(s), no issues", len(wp.Picks))
 			if len(issues) > 0 {
-				text = fmt.Sprintf("INVALID: %d issue(s)", len(issues))
+				var b strings.Builder
+				fmt.Fprintf(&b, "INVALID: %d issue(s)", len(issues))
 				for _, is := range issues {
 					if is.Ref != "" {
-						text += fmt.Sprintf("\n  - [%s] %s", is.Ref, is.Message)
+						fmt.Fprintf(&b, "\n  - [%s] %s", is.Ref, is.Message)
 					} else {
-						text += fmt.Sprintf("\n  - %s", is.Message)
+						fmt.Fprintf(&b, "\n  - %s", is.Message)
 					}
 				}
+				text = b.String()
 			}
 			return Emit(cmd, "plan.check", data, text)
 		},

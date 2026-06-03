@@ -95,3 +95,18 @@ func TestLoadParsesPlanBlock(t *testing.T) {
 		t.Errorf("overlap_max = %d, want 0 (explicitly configured)", cfg.PlanOverlapMax())
 	}
 }
+
+func TestPlanOverlapMaxNegativeClampsToZero(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[plan]\noverlap_max = -1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.PlanOverlapMax() != 0 {
+		t.Errorf("negative overlap_max must clamp to 0 (serialize on any non-structural overlap), got %d", cfg.PlanOverlapMax())
+	}
+}

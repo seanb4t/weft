@@ -35,9 +35,16 @@ type Derivation struct {
 // file-overlap policy (spec §4.2). It is pure and deterministic: picks are
 // processed in ref-lexicographic order and the derived-edge tiebreaker keys on
 // ref (bead-ids do not exist until emit runs bd create --graph).
+//
+// Callers should pass picks with unique refs; the plan layer's Validate
+// guarantees this. With duplicate refs the sort ordering still holds but the
+// lo/hi invariant in the overlap loop becomes <= rather than <.
+//
+// For overlap-derived edges the observable rule is: the later ref (hi) depends
+// on the earlier ref (lo) — i.e. the edge runs hi→lo so the earlier pick lands
+// in the prior shed.
 func Derive(picks []Pick, structural []string, overlapMax int) Derivation {
-	sorted := append([]Pick{}, picks...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Ref < sorted[j].Ref })
+	sorted := sortedPicks(picks)
 
 	edges := []Edge{}
 	edgeSet := map[[2]string]bool{}     // directed dedup
@@ -69,7 +76,7 @@ func Derive(picks []Pick, structural []string, overlapMax int) Derivation {
 	tolerated := []Overlap{}
 	for i := 0; i < len(sorted); i++ {
 		for j := i + 1; j < len(sorted); j++ {
-			lo, hi := sorted[i].Ref, sorted[j].Ref // sorted: lo < hi
+			lo, hi := sorted[i].Ref, sorted[j].Ref // lo <= hi (sorted ascending; Validate enforces unique refs upstream)
 			if pairHasEdge[[2]string{lo, hi}] {
 				continue // author already ordered this pair
 			}

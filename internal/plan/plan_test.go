@@ -4,7 +4,10 @@
 
 package plan
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestValidateAcceptsWellFormedPlan(t *testing.T) {
 	p := WarpPlan{
@@ -62,6 +65,66 @@ func TestValidateRejectsEpicKeyInNeeds(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected reserved-ref-in-needs issue; issues=%+v", issues)
+	}
+}
+
+func TestValidateRejectsOutOfRangePriority(t *testing.T) {
+	neg := -1
+	hi := 5
+	valid := 0
+	cases := []struct {
+		name    string
+		pri     *int
+		wantErr bool
+	}{
+		{"negative", &neg, true},
+		{"above-max", &hi, true},
+		{"zero-valid", &valid, false},
+		{"nil-unset", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := WarpPlan{
+				Epic:  Epic{Title: "E"},
+				Picks: []Pick{{Ref: "p1", Title: "T", Description: "d", Priority: tc.pri}},
+			}
+			issues := Validate(p)
+			found := false
+			for _, is := range issues {
+				if is.Message == "pick.priority must be between 0 and 4" {
+					found = true
+				}
+			}
+			if tc.wantErr && !found {
+				t.Errorf("expected priority-bounds issue; issues=%+v", issues)
+			}
+			if !tc.wantErr && found {
+				t.Errorf("unexpected priority-bounds issue; issues=%+v", issues)
+			}
+		})
+	}
+}
+
+func TestValidateEpicKeyRefYieldsOnlyReservedIssue(t *testing.T) {
+	// A pick with ref=@epic and no description must produce ONLY the reserved-ref
+	// issue, not a spurious description-required issue.
+	p := WarpPlan{
+		Epic:  Epic{Title: "E"},
+		Picks: []Pick{{Ref: EpicKey, Title: "T"}}, // description intentionally missing
+	}
+	issues := Validate(p)
+	reservedFound := false
+	for _, is := range issues {
+		if is.Message == fmt.Sprintf("pick.ref %q is reserved", EpicKey) {
+			reservedFound = true
+			continue
+		}
+		if is.Ref == EpicKey {
+			t.Errorf("unexpected extra issue for @epic pick: %+v", is)
+		}
+	}
+	if !reservedFound {
+		t.Errorf("expected reserved-ref issue; issues=%+v", issues)
 	}
 }
 
