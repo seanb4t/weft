@@ -60,8 +60,8 @@ func (a *App) newShedFormCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&epic, "epic", "", "epic bead-id scoping the ready set (required)")
-	// --max is the parallelism dial. A configurable default (via .weft/config.toml)
-	// is deferred to seam 3; for now the default is a fixed 5.
-	c.Flags().IntVar(&max, "max", 5, "max wave size (parallelism dial)")
+	// --max is the parallelism dial; its default comes from .weft/config.toml
+	// [shed].max (falling back to config.DefaultShedMax). --max overrides it.
+	c.Flags().IntVar(&max, "max", a.Config.ShedMax(), "max wave size (parallelism dial)")
 	return c
 }

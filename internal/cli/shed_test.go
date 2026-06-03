@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -82,5 +83,23 @@ func TestShedFormPassesMaxAsLimit(t *testing.T) {
 	}
 	if joined := strings.Join(fake.gotArgs, " "); !strings.Contains(joined, "--limit 3") {
 		t.Errorf("--max 3 should pass --limit 3 to bd, got args %v", fake.gotArgs)
+	}
+}
+
+func TestShedFormMaxDefaultsFromConfig(t *testing.T) {
+	fake := &scriptedRunner{res: run.Result{Stdout: `[]`, Code: 0}}
+	app := &App{Runner: fake}
+	app.Config.Shed.Max = 9 // config supplies the cap
+	root := NewRootCmd(app)
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetArgs([]string{"shed", "form", "--epic", "weft-hjx", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// The wrapped `bd ready` call must carry --limit 9 (the config max).
+	joined := strings.Join(fake.gotArgs, " ")
+	if !strings.Contains(joined, "--limit 9") {
+		t.Errorf("expected --limit 9 from config, got args: %v", fake.gotArgs)
 	}
 }

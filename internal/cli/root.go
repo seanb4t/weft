@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"github.com/seanb4t/weft/internal/config"
 	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ import (
 // App holds the engine's injectable dependencies.
 type App struct {
 	Runner run.Runner
+	Config config.Config
 }
 
 // NewRootCmd builds the weft root command and its verb tree.
