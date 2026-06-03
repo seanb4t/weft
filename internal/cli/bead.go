@@ -34,8 +34,11 @@ func showBead(r run.Runner, bead string) (beadInfo, error) {
 		return beadInfo{}, exit.Hardf("bd show %s failed: %s", bead, strings.TrimSpace(res.Stderr))
 	}
 	var arr []beadInfo
-	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil || len(arr) == 0 {
-		return beadInfo{}, exit.Hardf("parse bd show json for %s", bead)
+	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
+		return beadInfo{}, exit.Hardf("parse bd show json for %s: %v", bead, err)
+	}
+	if len(arr) == 0 {
+		return beadInfo{}, exit.Hardf("bd show %s returned no issue", bead)
 	}
 	return arr[0], nil
 }
