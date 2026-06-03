@@ -239,6 +239,114 @@ func TestShedCleanupForgetFailureIsHardFailure(t *testing.T) {
 	}
 }
 
+func TestShedIntegrateBuildsLinearStack(t *testing.T) {
+	// Two sealed picks; integrate orders them lexicographically and rebases each
+	// onto the previous tip, then reports stack + (no) conflicts.
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.1.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-hjx.1.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			return run.Result{Stdout: "", Code: 0} // clean
+		default: // jj rebase
+			return run.Result{Code: 0}
+		}
+	}}
+	// Pass members out of lexical order to prove sorting.
+	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// First rebase: chA onto trunk(); second: chB onto chA (lexicographic order).
+	var rebases [][]string
+	for _, c := range r.calls {
+		if len(c) >= 2 && c[0] == "jj" && contains(c, "rebase") {
+			rebases = append(rebases, c)
+		}
+	}
+	if len(rebases) != 2 {
+		t.Fatalf("want 2 rebases, got %d: %v", len(rebases), rebases)
+	}
+	if !contains(rebases[0], "chA") || !contains(rebases[0], "trunk()") {
+		t.Errorf("first rebase should be chA onto trunk(): %v", rebases[0])
+	}
+	if !contains(rebases[1], "chB") || !contains(rebases[1], "chA") {
+		t.Errorf("second rebase should be chB onto chA: %v", rebases[1])
+	}
+	if !strings.Contains(out.String(), "chA") || !strings.Contains(out.String(), "chB") {
+		t.Errorf("stack missing in output: %q", out.String())
+	}
+}
+
+func TestShedIntegrateRefusesUnsealedMember(t *testing.T) {
+	// A member whose bd show returns labels WITHOUT a jj-change: label must
+	// make integrate exit 1 (invocation error) and perform NO jj rebase.
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.1.1"):
+			// No jj-change: label — bead is not sealed.
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["phase:run"]}]`, Code: 0}
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+	_, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.1")
+	if got := exit.Code(err); got != 1 {
+		t.Fatalf("unsealed member should be an invocation error (exit 1), got %d (err=%v)", got, err)
+	}
+	// No rebase must have been attempted.
+	for _, c := range r.calls {
+		if contains(c, "rebase") {
+			t.Errorf("must not attempt rebase for unsealed member; got call %v", c)
+		}
+	}
+}
+
+func TestShedIntegrateSurfacesConflicts(t *testing.T) {
+	// Like the happy-path test but the scoped conflicts revset returns a change-id.
+	// Conflicts are data (exit 0) and appear under "conflicts" in the JSON output.
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.1.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-hjx.1.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			// The scoped revset is "conflicts() & (chA | chB)" — still matches
+			// the substring "log -r conflicts()" so this mock branch fires.
+			return run.Result{Stdout: "chA\n", Code: 0}
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
+	if err != nil {
+		t.Fatalf("conflicts are data, not an error; got: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "chA") {
+		t.Errorf("conflicted change-id chA must appear in output: %q", s)
+	}
+	// Confirm it's under "conflicts", not silently dropped.
+	if !strings.Contains(s, `"conflicts"`) {
+		t.Errorf(`"conflicts" key missing from JSON output: %q`, s)
+	}
+}
+
+func contains(ss []string, want string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, want) {
+			return true
+		}
+	}
+	return false
+}
+
 // When jj workspace add fails after bd update already set the bead in_progress,
 // shed isolate hard-fails (the bead is deliberately left in_progress for resume,
 // per the status-first invariant — spec §4). Verifies the status-first ordering
