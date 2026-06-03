@@ -52,3 +52,18 @@ func TestShedMaxFallsBackWhenUnsetOrInvalid(t *testing.T) {
 		t.Errorf("negative ShedMax() = %d, want %d", c.ShedMax(), DefaultShedMax)
 	}
 }
+
+func TestLoadParsesVerifyCommand(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[verify]\ncommand = \"go test ./...\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Verify.Command != "go test ./..." {
+		t.Errorf("Verify.Command = %q", cfg.Verify.Command)
+	}
+}

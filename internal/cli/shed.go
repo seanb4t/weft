@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,7 @@ import (
 
 func (a *App) newShedCmd() *cobra.Command {
 	shed := &cobra.Command{Use: "shed", Short: "Wave-level orchestration (spec §4.1)"}
-	shed.AddCommand(a.newShedFormCmd(), a.newShedIsolateCmd(), a.newShedCleanupCmd())
+	shed.AddCommand(a.newShedFormCmd(), a.newShedIsolateCmd(), a.newShedCleanupCmd(), a.newShedIntegrateCmd())
 	return shed
 }
 
@@ -146,6 +147,89 @@ func (a *App) newShedIsolateCmd() *cobra.Command {
 			data := map[string]any{"wave": isolated}
 			return Emit(cmd, "shed.isolate", data,
 				fmt.Sprintf("isolated %d picks: %s", len(isolated), strings.Join(isolated, " ")))
+		},
+	}
+}
+
+func (a *App) newShedIntegrateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "integrate <bead-id>...",
+		Short: "Rebase the wave's sealed changes into a dep-ordered linear stack",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Wave members are mutually independent (spec §4.1), so the dep graph
+			// imposes no intra-wave order; the deterministic tiebreaker is bead-id
+			// lexicographic.
+			beads := append([]string{}, args...)
+			sort.Strings(beads)
+
+			// Resolve each pick's sealed change-id (the spine).
+			changes := make([]string, 0, len(beads))
+			for _, b := range beads {
+				ch, err := changeOf(a.Runner, b)
+				if err != nil {
+					return err
+				}
+				if ch == "" {
+					return exit.Invocationf("bead %s has no jj-change label (not sealed)", b)
+				}
+				changes = append(changes, ch)
+			}
+
+			// Rebase into a linear stack: trunk() <- beads[0] <- beads[1] <- ...
+			//
+			// NOTE: --skip-emptied is intentionally omitted here, diverging from
+			// spec §4.1's verb table. --skip-emptied abandons a member that rebases
+			// to empty, which would leave prev=<ch> pointing at a now-nonexistent
+			// change and break the next rebase -o <ch>. jj change-ids are stable
+			// across rebase, so without the flag every member survives and the
+			// linear cursor stays valid; an empty member surfaces downstream rather
+			// than being silently dropped. See ADR weft-hjx.7 (decision bead).
+			prev := "trunk()"
+			stack := make([]map[string]string, 0, len(beads))
+			for i, ch := range changes {
+				if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev); err != nil {
+					return exit.Hardf("jj rebase could not run: %v", err)
+				} else if res.Code != 0 {
+					return exit.Hardf("jj rebase %s failed: %s", ch, strings.TrimSpace(res.Stderr))
+				}
+				prev = ch
+				stack = append(stack, map[string]string{"bead": beads[i], "change": ch})
+			}
+
+			// First-class conflicts are surfaced as data; resolution is seam 4.
+			// The revset is stack-scoped: only report conflicts that belong to this
+			// wave's members, not any pre-existing conflicts elsewhere in the repo.
+			stackRevs := make([]string, 0, len(changes))
+			for _, ch := range changes {
+				stackRevs = append(stackRevs, ch)
+			}
+			scopedRevset := "conflicts() & (" + strings.Join(stackRevs, " | ") + ")"
+			res, err := run.JJ(a.Runner, "log", "-r", scopedRevset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+			if err != nil {
+				return exit.Hardf("jj log conflicts() could not run: %v", err)
+			}
+			if res.Code != 0 {
+				return exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
+			}
+			conflicts := []string{}
+			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+				if ln = strings.TrimSpace(ln); ln != "" {
+					conflicts = append(conflicts, ln)
+				}
+			}
+
+			// Build human-readable stack summary (change-ids in order).
+			changeIDs := make([]string, 0, len(stack))
+			for _, e := range stack {
+				changeIDs = append(changeIDs, e["change"])
+			}
+			data := map[string]any{"stack": stack, "conflicts": conflicts}
+			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changeIDs, " -> "))
+			if len(conflicts) > 0 {
+				text += fmt.Sprintf("  [%d conflicted: %s]", len(conflicts), strings.Join(conflicts, " "))
+			}
+			return Emit(cmd, "shed.integrate", data, text)
 		},
 	}
 }

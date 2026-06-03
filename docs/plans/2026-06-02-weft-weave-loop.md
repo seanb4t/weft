@@ -9,7 +9,7 @@
 
 **Goal:** Implement the seam-1 weave loop on the merged foundation + workspace layer — `pick seal/verify/land/redo`, `shed integrate` (the dep-ordered rebase stack), and read-only `resume` — so a wave can be sealed, integrated, verified, landed, recovered, and observed.
 
-**Architecture:** New cobra verbs in `internal/cli` wrap `jj`/`bd` through the existing injectable `run.Runner` (ADR `weft-re2`). A shared `bead.go` helper reads bead facts (`showBead`) and the `jj-change:<id>` spine label (`changeOf`, spec §5.1). `shed integrate` rebases each sealed change into a linear stack (`jj rebase -s … -o … --skip-emptied`) ordered by the bead-id-lexicographic tiebreaker, surfacing first-class conflicts as data (resolution is seam 4). `resume` is a read-only projection — a hard invariant.
+**Architecture:** New cobra verbs in `internal/cli` wrap `jj`/`bd` through the existing injectable `run.Runner` (ADR `weft-re2`). A shared `bead.go` helper reads bead facts (`showBead`) and the `jj-change:<id>` spine label (`changeOf`, spec §5.1). `shed integrate` rebases each sealed change into a linear stack (`jj rebase -s … -o …`, **without** `--skip-emptied` — see ADR `weft-hjx.7`) ordered by the bead-id-lexicographic tiebreaker, surfacing first-class conflicts as data (resolution is seam 4). `resume` is a read-only projection — a hard invariant.
 
 **Tech Stack:** Go 1.26, `github.com/spf13/cobra` v1.9.x, stdlib `sort`/`strings`/`encoding/json`. Subprocesses: `jj`, `bd`.
 
@@ -569,21 +569,35 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				changes = append(changes, ch)
 			}
 
-			// Rebase into a linear stack: trunk() <- chA <- chB <- ...
+			// Rebase into a linear stack: trunk() <- beads[0] <- beads[1] <- ...
+			//
+			// NOTE: --skip-emptied is intentionally omitted, diverging from the
+			// original spec §4.1 verb table. --skip-emptied abandons an emptied
+			// member, making prev=<ch> a dead reference for the next rebase -o <ch>.
+			// Without it every member survives and the linear cursor stays valid;
+			// an empty member surfaces downstream rather than being silently dropped.
+			// See ADR weft-hjx.7 (decision bead).
 			prev := "trunk()"
-			stack := make([]string, 0, len(changes))
-			for _, ch := range changes {
-				if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev, "--skip-emptied"); err != nil {
+			stack := make([]map[string]string, 0, len(beads))
+			for i, ch := range changes {
+				if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev); err != nil {
 					return exit.Hardf("jj rebase could not run: %v", err)
 				} else if res.Code != 0 {
 					return exit.Hardf("jj rebase %s failed: %s", ch, strings.TrimSpace(res.Stderr))
 				}
 				prev = ch
-				stack = append(stack, ch)
+				stack = append(stack, map[string]string{"bead": beads[i], "change": ch})
 			}
 
 			// First-class conflicts are surfaced as data; resolution is seam 4.
-			res, err := run.JJ(a.Runner, "log", "-r", "conflicts()", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+			// The revset is stack-scoped to avoid reporting pre-existing conflicts
+			// elsewhere in the repo.
+			stackRevs := make([]string, 0, len(changes))
+			for _, ch := range changes {
+				stackRevs = append(stackRevs, ch)
+			}
+			scopedRevset := "conflicts() & (" + strings.Join(stackRevs, " | ") + ")"
+			res, err := run.JJ(a.Runner, "log", "-r", scopedRevset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 			if err != nil {
 				return exit.Hardf("jj log conflicts() could not run: %v", err)
 			}
@@ -597,8 +611,12 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				}
 			}
 
+			changeIDs := make([]string, 0, len(stack))
+			for _, e := range stack {
+				changeIDs = append(changeIDs, e["change"])
+			}
 			data := map[string]any{"stack": stack, "conflicts": conflicts}
-			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(stack, " -> "))
+			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changeIDs, " -> "))
 			if len(conflicts) > 0 {
 				text += fmt.Sprintf("  [%d conflicted: %s]", len(conflicts), strings.Join(conflicts, " "))
 			}

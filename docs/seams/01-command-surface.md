@@ -77,7 +77,13 @@ work needs attention" from collapsing into one number.
 {
   "ok": true,
   "verb": "shed.integrate",
-  "data": { "stack": ["q2", "x9", "k4"] },
+  "data": {
+    "stack": [
+      {"bead": "weft-a1", "change": "q2"},
+      {"bead": "weft-a2", "change": "x9"},
+      {"bead": "weft-a3", "change": "k4"}
+    ]
+  },
   "conflicts": [
     { "bead": "weft-a2", "change": "k4",
       "paths": ["internal/loom/rebase.go"], "lowest_ancestor": "k4" }
@@ -102,7 +108,7 @@ hatches), `finish` (epic-level), plus top-level `resume`.
 |---|---|---|---|
 | `shed form --epic E [--max N]` | thin | `bd ready` ∩ epic, capped by the parallelism dial `--max` | Returns the wave (member bead-ids) as JSON. The scheduler. `--max` default deferred to seam 3 config. |
 | `shed isolate <wave>` | coarse | once: `jj git fetch`; per member: `bd update --status in_progress` **then** `jj workspace add … -r trunk()` | **Resolves (a):** the `open → in_progress` transition happens at isolation, not at executor return. Status-first ordering is the [seam 3](03-workspace-lifecycle.md) lifecycle invariant (a crash mid-isolate leaves no reapable workspace). |
-| `shed integrate <wave>` | coarse | topo-order members by the bead dep graph, **tiebreak bead-id lexicographic**, `jj rebase -s <change> -o <prev-tip> --skip-emptied` | **Resolves (b):** wave members are mutually independent, so the dep graph imposes no intra-wave order; lexicographic bead-id is the deterministic tiebreaker. Emits the linear `stack` + any `conflicts[]`. |
+| `shed integrate <wave>` | coarse | topo-order members by the bead dep graph, **tiebreak bead-id lexicographic**, `jj rebase -s <change> -o <prev-tip>` (no `--skip-emptied`) | **Resolves (b):** wave members are mutually independent, so the dep graph imposes no intra-wave order; lexicographic bead-id is the deterministic tiebreaker. Emits the linear `stack` (as `{bead,change}` pairs) + any `conflicts[]`. `--skip-emptied` is intentionally omitted: it abandons an emptied member, making `prev=<ch>` a dead reference for the next `-o <ch>`; without it every member survives and the linear cursor stays valid (see ADR `weft-hjx.7`). |
 | `shed cleanup <wave>` | coarse | per member: `jj workspace forget` + `rm -rf` | Idempotent teardown. |
 | `shed abandon <wave>` | coarse | `bd update --status open` for members (they are `in_progress`) + `shed cleanup` + `jj abandon` the in-flight change-ids | Bails an in-flight wave. Members are `in_progress` (not closed), so the transition is `--status open`, **not** `bd reopen` (which is for closed beads). `jj abandon` cleans working state; changes stay recoverable via `jj op log` / `jj evolog`. |
 | `shed status <wave>` | thin | read member states + change-ids | Inspection. |

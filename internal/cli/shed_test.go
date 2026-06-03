@@ -239,6 +239,116 @@ func TestShedCleanupForgetFailureIsHardFailure(t *testing.T) {
 	}
 }
 
+func TestShedIntegrateBuildsLinearStack(t *testing.T) {
+	// Two sealed picks; integrate orders them lexicographically (weft-hjx.1.1
+	// before weft-hjx.1.2) and rebases each onto the previous tip, then
+	// reports stack as {bead,change} pairs and no conflicts.
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.1.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-hjx.1.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			return run.Result{Stdout: "", Code: 0} // clean
+		default: // jj rebase
+			return run.Result{Code: 0}
+		}
+	}}
+	// Pass members out of lexical order to prove sorting.
+	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// First rebase: chA onto trunk(); second: chB onto chA (lexicographic order).
+	var rebases [][]string
+	for _, c := range r.calls {
+		if len(c) >= 2 && c[0] == "jj" && contains(c, "rebase") {
+			rebases = append(rebases, c)
+		}
+	}
+	if len(rebases) != 2 {
+		t.Fatalf("want 2 rebases, got %d: %v", len(rebases), rebases)
+	}
+	if !contains(rebases[0], "chA") || !contains(rebases[0], "trunk()") {
+		t.Errorf("first rebase should be chA onto trunk(): %v", rebases[0])
+	}
+	if !contains(rebases[1], "chB") || !contains(rebases[1], "chA") {
+		t.Errorf("second rebase should be chB onto chA: %v", rebases[1])
+	}
+	// Stack entries must be {bead,change} pairs — both bead-ids and change-ids present.
+	s := out.String()
+	if !strings.Contains(s, `"bead": "weft-hjx.1.1"`) || !strings.Contains(s, `"change": "chA"`) {
+		t.Errorf("stack missing weft-hjx.1.1/chA pair: %q", s)
+	}
+	if !strings.Contains(s, `"bead": "weft-hjx.1.2"`) || !strings.Contains(s, `"change": "chB"`) {
+		t.Errorf("stack missing weft-hjx.1.2/chB pair: %q", s)
+	}
+	// Conflicts revset must be stack-scoped, not bare conflicts().
+	var sawScopedConflicts bool
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "conflicts() & (") {
+			sawScopedConflicts = true
+		}
+	}
+	if !sawScopedConflicts {
+		t.Errorf("conflicts revset must be scoped (conflicts() & (...)), saw calls: %v", r.calls)
+	}
+}
+
+func TestShedIntegrateSurfacesConflicts(t *testing.T) {
+	// chB comes back as conflicted; integrate still exits 0 with conflicts in data.
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.1.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-hjx.1.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			return run.Result{Stdout: "chB\n", Code: 0} // chB conflicted
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
+	if err != nil {
+		t.Fatalf("conflicts must not cause a non-zero exit (verdict is data): %v", err)
+	}
+	s := out.String()
+	// Stack still has both {bead,change} pairs.
+	if !strings.Contains(s, `"bead": "weft-hjx.1.1"`) || !strings.Contains(s, `"change": "chA"`) {
+		t.Errorf("stack missing weft-hjx.1.1/chA: %q", s)
+	}
+	if !strings.Contains(s, `"bead": "weft-hjx.1.2"`) || !strings.Contains(s, `"change": "chB"`) {
+		t.Errorf("stack missing weft-hjx.1.2/chB: %q", s)
+	}
+	if !strings.Contains(s, "chB") {
+		t.Errorf("conflicted chB must appear in output: %q", s)
+	}
+	// Conflicts revset must be scoped.
+	var sawScopedConflicts bool
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "conflicts() & (") {
+			sawScopedConflicts = true
+		}
+	}
+	if !sawScopedConflicts {
+		t.Errorf("conflicts revset must be scoped; calls: %v", r.calls)
+	}
+}
+
+func contains(ss []string, want string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, want) {
+			return true
+		}
+	}
+	return false
+}
+
 // When jj workspace add fails after bd update already set the bead in_progress,
 // shed isolate hard-fails (the bead is deliberately left in_progress for resume,
 // per the status-first invariant — spec §4). Verifies the status-first ordering
