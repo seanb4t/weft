@@ -7,6 +7,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -18,7 +19,7 @@ import (
 
 func (a *App) newShedCmd() *cobra.Command {
 	shed := &cobra.Command{Use: "shed", Short: "Wave-level orchestration (spec §4.1)"}
-	shed.AddCommand(a.newShedFormCmd(), a.newShedIsolateCmd())
+	shed.AddCommand(a.newShedFormCmd(), a.newShedIsolateCmd(), a.newShedCleanupCmd())
 	return shed
 }
 
@@ -65,6 +66,42 @@ func (a *App) newShedFormCmd() *cobra.Command {
 	// [shed].max (falling back to config.DefaultShedMax). --max overrides it.
 	c.Flags().IntVar(&max, "max", a.Config.ShedMax(), "max wave size (parallelism dial)")
 	return c
+}
+
+func (a *App) newShedCleanupCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cleanup <bead-id>...",
+		Short: "Tear down a wave's workspaces (jj workspace forget + rm)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := jjRoot(a.Runner)
+			if err != nil {
+				return err
+			}
+			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
+			cleaned := []string{}
+			for _, bead := range args {
+				name := workspace.Name(bead)
+				path := workspace.Path(root, a.Config.Workspace.Root, bead)
+				// Path-safety guard (spec §5): a bead-id carrying "/" or ".."
+				// must not let os.RemoveAll escape the worktrees root.
+				if !workspace.Contains(wtRoot, path) {
+					return exit.Hardf("refusing to clean %q: resolves outside worktrees root %s", bead, wtRoot)
+				}
+				if res, err := run.JJ(a.Runner, "workspace", "forget", name); err != nil {
+					return exit.Hardf("jj workspace forget could not run: %v", err)
+				} else if res.Code != 0 {
+					return exit.Hardf("jj workspace forget %s failed: %s", bead, strings.TrimSpace(res.Stderr))
+				}
+				if err := os.RemoveAll(path); err != nil {
+					return exit.Hardf("rm workspace dir %s: %v", path, err)
+				}
+				cleaned = append(cleaned, bead)
+			}
+			data := map[string]any{"cleaned": cleaned}
+			return Emit(cmd, "shed.cleanup", data, fmt.Sprintf("cleaned %d workspace(s)", len(cleaned)))
+		},
+	}
 }
 
 func (a *App) newShedIsolateCmd() *cobra.Command {
