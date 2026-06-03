@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -116,9 +117,104 @@ func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 	return b.String()
 }
 
-// planReplan is a TEMPORARY STUB — Task 8 replaces this with bd import upsert.
+// planReplan upserts an existing warp via bd import (spec §7): resolve the
+// ref->bead map from the epic's weft-ref labels, build the upsert payload, and
+// (unless --dry-run) apply it. New-pick dependency edges and removed-pick
+// supersede are surfaced as data but NOT applied (§8 sub-seams).
 func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, epic string, dryRun bool) error {
-	return exit.Invocationf("re-plan (--epic) not yet implemented")
+	existing, err := a.warpRefMap(epic)
+	if err != nil {
+		return err
+	}
+	rp, err := plan.BuildReplan(wp, d, epic, existing)
+	if err != nil {
+		return exit.Hardf("build re-plan payload: %v", err)
+	}
+	if dryRun {
+		data := map[string]any{
+			"dry_run": true, "mode": "upsert", "epic": epic,
+			"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
+			"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+		}
+		return Emit(cmd, "plan.emit", data, replanText(epic, rp, true))
+	}
+	path, cleanup, err := writeTempPayload("weft-replan-*.jsonl", rp.JSONL)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	res, err := run.BD(a.Runner, "import", path)
+	if err != nil {
+		return exit.Hardf("bd import could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return exit.Hardf("bd import failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	data := map[string]any{
+		"mode": "upsert", "epic": epic,
+		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
+		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+		"bd_output": strings.TrimSpace(res.Stdout),
+	}
+	return Emit(cmd, "plan.emit", data, replanText(epic, rp, false))
+}
+
+// warpRefMap reads an epic's children and rebuilds the ref->bead map from their
+// weft-ref:<ref> labels (spec §3/§7) in a single bd list call.
+func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
+	res, err := run.BD(a.Runner, "list", "--parent", epic, "--json")
+	if err != nil {
+		return nil, exit.Hardf("bd list could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("bd list failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	var arr []struct {
+		ID     string   `json:"id"`
+		Status string   `json:"status"`
+		Labels []string `json:"labels"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
+		return nil, exit.Hardf("parse bd list json: %v", err)
+	}
+	m := map[string]plan.ExistingBead{}
+	for _, it := range arr {
+		for _, l := range it.Labels {
+			if strings.HasPrefix(l, plan.RefLabelPrefix) {
+				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
+				m[ref] = plan.ExistingBead{ID: it.ID, Status: it.Status}
+			}
+		}
+	}
+	return m, nil
+}
+
+// replanText renders the re-plan summary, flagging the §8-deferred items.
+func replanText(epic string, rp plan.Replan, dry bool) string {
+	prefix := "re-planned"
+	if dry {
+		prefix = "DRY RUN (upsert)"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s epic %s — %d updated, %d created, %d removed\n",
+		prefix, epic, len(rp.Updated), len(rp.Created), len(rp.Removed))
+	if len(rp.DeferredEdges) > 0 {
+		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — wire after creation (§8): ", len(rp.DeferredEdges))
+		for i, e := range rp.DeferredEdges {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%s->%s", e.From, e.To)
+		}
+		b.WriteString("\n")
+	}
+	if len(rp.Removed) > 0 {
+		fmt.Fprintf(&b, "  removed ref(s) need supersede (§8): %s\n", strings.Join(rp.Removed, ", "))
+	}
+	if dry {
+		b.WriteString("  (no mutation — re-run without --dry-run to upsert)")
+	}
+	return b.String()
 }
 
 func (a *App) newPlanCheckCmd() *cobra.Command {

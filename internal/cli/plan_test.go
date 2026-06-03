@@ -95,3 +95,56 @@ func TestPlanEmitRefusesInvalidPlan(t *testing.T) {
 		t.Fatalf("emit must reject invalid plan with exit 1, got %d", got)
 	}
 }
+
+func TestPlanEmitReplanUpsertsMatchedRef(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A2","description":"updated"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "bd list --parent weft-hjx.9") {
+			return run.Result{Stdout: `[{"id":"weft-hjx.9.1","status":"open","labels":["weft-ref:a"]}]`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "weft-hjx.9", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	sawImport := false
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "bd import") {
+			sawImport = true
+		}
+	}
+	if !sawImport {
+		t.Errorf("expected bd import: %v", r.calls)
+	}
+	if !strings.Contains(out.String(), `"mode": "upsert"`) {
+		t.Errorf("output: %q", out.String())
+	}
+}
+
+func TestPlanEmitReplanDryRunReportsDeltas(t *testing.T) {
+	// ref "a" matches an existing bead; "new" is created; existing "gone" is removed.
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"},{"ref":"new","title":"N","description":"n"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
+			return run.Result{Stdout: `[{"id":"e.1","status":"open","labels":["weft-ref:a"]},{"id":"e.2","status":"closed","labels":["weft-ref:gone"]}]`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "e", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	s := out.String()
+	for _, want := range []string{`"updated"`, `"created"`, `"removed"`, "gone", "new"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in %q", want, s)
+		}
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "bd import") {
+			t.Fatalf("dry-run must not import: %v", r.calls)
+		}
+	}
+}
