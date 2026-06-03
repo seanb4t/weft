@@ -103,3 +103,84 @@ func TestShedFormMaxDefaultsFromConfig(t *testing.T) {
 		t.Errorf("expected --limit 9 from config, got args: %v", fake.gotArgs)
 	}
 }
+
+// routeRunner is a recording fake that dispatches each call through fn, so a
+// test can return different results per command and assert call ordering.
+type routeRunner struct {
+	fn    func(name string, args []string) run.Result
+	calls [][]string
+}
+
+func (r *routeRunner) Run(name string, args ...string) (run.Result, error) {
+	r.calls = append(r.calls, append([]string{name}, args...))
+	return r.fn(name, args), nil
+}
+
+func TestShedIsolateStatusBeforeWorkspaceAdd(t *testing.T) {
+	fake := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "jj" && len(args) >= 2 && args[1] == "root" {
+			return run.Result{Stdout: "/repo/weft", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(fake, "shed", "isolate", "weft-hjx.1.1", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// Find the bd-update and jj-workspace-add call indices.
+	upd, add := -1, -1
+	for i, c := range fake.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "bd update weft-hjx.1.1 --status in_progress") {
+			upd = i
+		}
+		if strings.Contains(j, "workspace add") && strings.Contains(j, "weft-hjx__1__1") {
+			add = i
+		}
+	}
+	if upd < 0 || add < 0 {
+		t.Fatalf("missing calls: upd=%d add=%d (%v)", upd, add, fake.calls)
+	}
+	if upd > add {
+		t.Errorf("status-first violated: bd update (%d) must precede workspace add (%d)", upd, add)
+	}
+	if !strings.Contains(out.String(), "weft-hjx.1.1") {
+		t.Errorf("output missing isolated bead: %q", out.String())
+	}
+}
+
+func TestShedIsolateRunnerErrorIsHardFailure(t *testing.T) {
+	_, err := newTestCmd(errRunner{}, "shed", "isolate", "weft-hjx.1.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("subprocess that cannot start should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+func TestShedIsolateFetchFailureIsHardFailure(t *testing.T) {
+	fake := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "jj" && len(args) >= 3 && args[2] == "fetch" {
+			return run.Result{Code: 1, Stderr: "jj: offline"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := newTestCmd(fake, "shed", "isolate", "weft-hjx.1.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("jj git fetch failure should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+func TestShedIsolateBdUpdateFailureIsHardFailure(t *testing.T) {
+	fake := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "jj" && len(args) >= 2 && args[1] == "root" {
+			return run.Result{Stdout: "/repo/weft", Code: 0}
+		}
+		if name == "bd" && len(args) >= 1 && args[0] == "update" {
+			return run.Result{Code: 1, Stderr: "bd: unknown bead"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := newTestCmd(fake, "shed", "isolate", "weft-hjx.1.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("bd update failure should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
