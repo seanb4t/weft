@@ -25,6 +25,9 @@ type Config struct {
 	Workspace struct {
 		Root string `toml:"root"`
 	} `toml:"workspace"`
+	Verify struct {
+		Command string `toml:"command"`
+	} `toml:"verify"`
 }
 
 // Load reads the TOML config at path. A missing file is not an error — it

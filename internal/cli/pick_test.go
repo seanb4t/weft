@@ -5,9 +5,11 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
+	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
 )
 
@@ -45,5 +47,36 @@ func TestPickSealCommitsAndLabels(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "ch4ng3id000") {
 		t.Errorf("output missing change-id: %q", out.String())
+	}
+}
+
+func TestPickVerifyVerdictIsData(t *testing.T) {
+	// Gate exits non-zero → pass:false, but the VERB still exits 0 (verdict is data).
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "sh" {
+			return run.Result{Code: 1} // gate fails
+		}
+		return run.Result{Code: 0}
+	}}
+	app := &App{Runner: r}
+	app.Config.Verify.Command = "false"
+	root := NewRootCmd(app)
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetArgs([]string{"pick", "verify", "weft-hjx.1.1", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("verify must exit 0 even when the gate fails, got %v", err)
+	}
+	if !strings.Contains(out.String(), `"pass": false`) {
+		t.Errorf("expected pass:false in data: %q", out.String())
+	}
+}
+
+func TestPickVerifyRequiresConfiguredGate(t *testing.T) {
+	app := &App{Runner: &routeRunner{fn: func(string, []string) run.Result { return run.Result{} }}}
+	root := NewRootCmd(app) // no Verify.Command
+	root.SetArgs([]string{"pick", "verify", "weft-hjx.1.1"})
+	if got := exit.Code(root.Execute()); got != 1 {
+		t.Fatalf("missing gate must be exit 1, got %d", got)
 	}
 }

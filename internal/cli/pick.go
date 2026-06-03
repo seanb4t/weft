@@ -15,8 +15,36 @@ import (
 
 func (a *App) newPickCmd() *cobra.Command {
 	pick := &cobra.Command{Use: "pick", Short: "Bead-level pick lifecycle (spec §4.2)"}
-	pick.AddCommand(a.newPickSealCmd())
+	pick.AddCommand(a.newPickSealCmd(), a.newPickVerifyCmd())
 	return pick
+}
+
+func (a *App) newPickVerifyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "verify <bead>",
+		Short: "Run the configured verify gate; the verdict is data (spec §4.2)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bead := args[0]
+			gate := strings.TrimSpace(a.Config.Verify.Command)
+			if gate == "" {
+				return exit.Invocationf("no verify gate configured ([verify].command in .weft/config.toml)")
+			}
+			// The engine ran the gate fine, so this verb exits 0 regardless of the
+			// gate's own exit — the pass/fail verdict is DATA (spec §3).
+			res, err := a.Runner.Run("sh", "-c", gate)
+			if err != nil {
+				return exit.Hardf("verify gate could not run: %v", err)
+			}
+			pass := res.Code == 0
+			data := map[string]any{"bead": bead, "pass": pass}
+			verdict := "FAIL"
+			if pass {
+				verdict = "PASS"
+			}
+			return Emit(cmd, "pick.verify", data, fmt.Sprintf("verify %s: %s", bead, verdict))
+		},
+	}
 }
 
 func (a *App) newPickSealCmd() *cobra.Command {
