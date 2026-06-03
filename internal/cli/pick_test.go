@@ -138,3 +138,41 @@ func contains2(calls [][]string, want string) bool {
 	}
 	return false
 }
+
+func TestPickRedoAbandonsAndReopens(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd show") {
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if err := runRoot(r, "pick", "redo", "weft-hjx.1.1"); err != nil {
+		t.Fatalf("redo error: %v", err)
+	}
+	if !contains2(r.calls, "jj --no-pager abandon chX") {
+		t.Errorf("expected jj abandon chX: %v", r.calls)
+	}
+	if !contains2(r.calls, "bd update weft-hjx.1.1 --status open") {
+		t.Errorf("expected bd update --status open: %v", r.calls)
+	}
+}
+
+func TestPickRedoSkipsAbandonWhenUnsealed(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd show") {
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":[]}]`, Code: 0} // no jj-change
+		}
+		return run.Result{Code: 0}
+	}}
+	if err := runRoot(r, "pick", "redo", "weft-hjx.1.1"); err != nil {
+		t.Fatalf("redo error: %v", err)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "abandon") {
+			t.Fatalf("must NOT jj abandon when unsealed: %v", r.calls)
+		}
+	}
+	if !contains2(r.calls, "bd update weft-hjx.1.1 --status open") {
+		t.Errorf("expected reopen even when unsealed: %v", r.calls)
+	}
+}

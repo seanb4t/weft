@@ -15,7 +15,7 @@ import (
 
 func (a *App) newPickCmd() *cobra.Command {
 	pick := &cobra.Command{Use: "pick", Short: "Bead-level pick lifecycle (spec §4.2)"}
-	pick.AddCommand(a.newPickSealCmd(), a.newPickVerifyCmd(), a.newPickLandCmd())
+	pick.AddCommand(a.newPickSealCmd(), a.newPickVerifyCmd(), a.newPickLandCmd(), a.newPickRedoCmd())
 	return pick
 }
 
@@ -80,6 +80,39 @@ func (a *App) newPickLandCmd() *cobra.Command {
 			}
 			data := map[string]any{"bead": bead, "change": change}
 			return Emit(cmd, "pick.land", data, fmt.Sprintf("landed %s (change %s)", bead, change))
+		},
+	}
+}
+
+func (a *App) newPickRedoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "redo <bead>",
+		Short: "Recovery: abandon the pick's change (if any) and reopen the bead (spec §4.1)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bead := args[0]
+			change, err := changeOf(a.Runner, bead)
+			if err != nil {
+				return err
+			}
+			if change != "" {
+				// jj abandon is a no-op when the crash preceded pick seal.
+				if res, err := run.JJ(a.Runner, "abandon", change); err != nil {
+					return exit.Hardf("jj abandon could not run: %v", err)
+				} else if res.Code != 0 {
+					return exit.Hardf("jj abandon %s failed: %s", change, strings.TrimSpace(res.Stderr))
+				}
+				// Drop the now-dangling spine label (best-effort).
+				_, _ = run.BD(a.Runner, "update", bead, "--remove-label", jjChangeLabelPrefix+change)
+			}
+			// Reopen to open so the next shed form re-picks it (in_progress → open).
+			if res, err := run.BD(a.Runner, "update", bead, "--status", "open"); err != nil {
+				return exit.Hardf("bd update could not run: %v", err)
+			} else if res.Code != 0 {
+				return exit.Hardf("bd update %s failed: %s", bead, strings.TrimSpace(res.Stderr))
+			}
+			data := map[string]any{"bead": bead, "abandoned": change}
+			return Emit(cmd, "pick.redo", data, fmt.Sprintf("redo %s (abandoned %q, reopened)", bead, change))
 		},
 	}
 }
