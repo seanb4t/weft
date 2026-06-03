@@ -176,33 +176,41 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				changes = append(changes, ch)
 			}
 
-			// Rebase into a linear stack: trunk() <- chA <- chB <- ...
-			// --skip-emptied is intentionally absent: every sealed member must
-			// appear in the stack, and jj change-ids are stable across rebase so
-			// prev = ch is always valid. An empty member is surfaced downstream,
-			// not silently dropped here.
+			// Rebase into a linear stack: trunk() <- beads[0] <- beads[1] <- ...
+			//
+			// NOTE: --skip-emptied is intentionally omitted here, diverging from
+			// spec §4.1's verb table. --skip-emptied abandons a member that rebases
+			// to empty, which would leave prev=<ch> pointing at a now-nonexistent
+			// change and break the next rebase -o <ch>. jj change-ids are stable
+			// across rebase, so without the flag every member survives and the
+			// linear cursor stays valid; an empty member surfaces downstream rather
+			// than being silently dropped. See ADR weft-hjx.7 (decision bead).
 			prev := "trunk()"
-			stack := make([]string, 0, len(changes))
-			for _, ch := range changes {
+			stack := make([]map[string]string, 0, len(beads))
+			for i, ch := range changes {
 				if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev); err != nil {
 					return exit.Hardf("jj rebase could not run: %v", err)
 				} else if res.Code != 0 {
 					return exit.Hardf("jj rebase %s failed: %s", ch, strings.TrimSpace(res.Stderr))
 				}
 				prev = ch
-				stack = append(stack, ch)
+				stack = append(stack, map[string]string{"bead": beads[i], "change": ch})
 			}
 
 			// First-class conflicts are surfaced as data; resolution is seam 4.
-			// Scope the revset to this wave's stack to avoid matching pre-existing
-			// conflicts elsewhere in the repo.
-			revset := "conflicts() & (" + strings.Join(stack, " | ") + ")"
-			res, err := run.JJ(a.Runner, "log", "-r", revset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+			// The revset is stack-scoped: only report conflicts that belong to this
+			// wave's members, not any pre-existing conflicts elsewhere in the repo.
+			stackRevs := make([]string, 0, len(changes))
+			for _, ch := range changes {
+				stackRevs = append(stackRevs, ch)
+			}
+			scopedRevset := "conflicts() & (" + strings.Join(stackRevs, " | ") + ")"
+			res, err := run.JJ(a.Runner, "log", "-r", scopedRevset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 			if err != nil {
-				return exit.Hardf("jj log conflicts revset could not run: %v", err)
+				return exit.Hardf("jj log conflicts() could not run: %v", err)
 			}
 			if res.Code != 0 {
-				return exit.Hardf("jj log conflicts revset failed: %s", strings.TrimSpace(res.Stderr))
+				return exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
 			}
 			conflicts := []string{}
 			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
@@ -211,8 +219,13 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				}
 			}
 
+			// Build human-readable stack summary (change-ids in order).
+			changeIDs := make([]string, 0, len(stack))
+			for _, e := range stack {
+				changeIDs = append(changeIDs, e["change"])
+			}
 			data := map[string]any{"stack": stack, "conflicts": conflicts}
-			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(stack, " -> "))
+			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changeIDs, " -> "))
 			if len(conflicts) > 0 {
 				text += fmt.Sprintf("  [%d conflicted: %s]", len(conflicts), strings.Join(conflicts, " "))
 			}

@@ -79,7 +79,9 @@ contorted.
   change already exists the moment it commits — no worktree merge-back. The
   orchestrator topologically orders the wave's change-ids by the bead dep graph
   and rebases them into a dep-ordered **linear stack** via
-  `jj rebase -s <change> -o <prev-tip> --skip-emptied`. Result: one change per
+  `jj rebase -s <change> -o <prev-tip>` (no `--skip-emptied`: it would abandon
+  an emptied member and leave `prev=<ch>` a dead reference for the next
+  `-o <ch>` — see ADR `weft-hjx.7`). Result: one change per
   bead, bisectable, driven by the bead DAG.
 - **Conflicts** land as first-class objects instead of blocking the wave;
   resolved post-hoc at the lowest conflicted ancestor (`jj new <lowest>` → edit
@@ -87,7 +89,7 @@ contorted.
   [seam 4](seams/04-conflict-resolution.md).
 
 The net effect is a **deletion**: GSD's entire `worktree-safety.cjs` merge-back
-choreography collapses to `jj workspace add` + `jj rebase --skip-emptied` +
+choreography collapses to `jj workspace add` + `jj rebase` +
 `jj workspace forget`. The conflict intelligence moves out of the orchestrator
 and into jj.
 

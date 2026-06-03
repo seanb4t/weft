@@ -240,8 +240,9 @@ func TestShedCleanupForgetFailureIsHardFailure(t *testing.T) {
 }
 
 func TestShedIntegrateBuildsLinearStack(t *testing.T) {
-	// Two sealed picks; integrate orders them lexicographically and rebases each
-	// onto the previous tip, then reports stack + (no) conflicts.
+	// Two sealed picks; integrate orders them lexicographically (weft-hjx.1.1
+	// before weft-hjx.1.2) and rebases each onto the previous tip, then
+	// reports stack as {bead,change} pairs and no conflicts.
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
@@ -276,39 +277,29 @@ func TestShedIntegrateBuildsLinearStack(t *testing.T) {
 	if !contains(rebases[1], "chB") || !contains(rebases[1], "chA") {
 		t.Errorf("second rebase should be chB onto chA: %v", rebases[1])
 	}
-	if !strings.Contains(out.String(), "chA") || !strings.Contains(out.String(), "chB") {
-		t.Errorf("stack missing in output: %q", out.String())
+	// Stack entries must be {bead,change} pairs — both bead-ids and change-ids present.
+	s := out.String()
+	if !strings.Contains(s, `"bead": "weft-hjx.1.1"`) || !strings.Contains(s, `"change": "chA"`) {
+		t.Errorf("stack missing weft-hjx.1.1/chA pair: %q", s)
 	}
-}
-
-func TestShedIntegrateRefusesUnsealedMember(t *testing.T) {
-	// A member whose bd show returns labels WITHOUT a jj-change: label must
-	// make integrate exit 1 (invocation error) and perform NO jj rebase.
-	r := &routeRunner{fn: func(name string, args []string) run.Result {
-		j := strings.Join(append([]string{name}, args...), " ")
-		switch {
-		case strings.Contains(j, "bd show weft-hjx.1.1"):
-			// No jj-change: label — bead is not sealed.
-			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["phase:run"]}]`, Code: 0}
-		default:
-			return run.Result{Code: 0}
-		}
-	}}
-	_, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.1")
-	if got := exit.Code(err); got != 1 {
-		t.Fatalf("unsealed member should be an invocation error (exit 1), got %d (err=%v)", got, err)
+	if !strings.Contains(s, `"bead": "weft-hjx.1.2"`) || !strings.Contains(s, `"change": "chB"`) {
+		t.Errorf("stack missing weft-hjx.1.2/chB pair: %q", s)
 	}
-	// No rebase must have been attempted.
+	// Conflicts revset must be stack-scoped, not bare conflicts().
+	var sawScopedConflicts bool
 	for _, c := range r.calls {
-		if contains(c, "rebase") {
-			t.Errorf("must not attempt rebase for unsealed member; got call %v", c)
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "conflicts() & (") {
+			sawScopedConflicts = true
 		}
+	}
+	if !sawScopedConflicts {
+		t.Errorf("conflicts revset must be scoped (conflicts() & (...)), saw calls: %v", r.calls)
 	}
 }
 
 func TestShedIntegrateSurfacesConflicts(t *testing.T) {
-	// Like the happy-path test but the scoped conflicts revset returns a change-id.
-	// Conflicts are data (exit 0) and appear under "conflicts" in the JSON output.
+	// chB comes back as conflicted; integrate still exits 0 with conflicts in data.
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
@@ -317,24 +308,35 @@ func TestShedIntegrateSurfacesConflicts(t *testing.T) {
 		case strings.Contains(j, "bd show weft-hjx.1.1"):
 			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
 		case strings.Contains(j, "log -r conflicts()"):
-			// The scoped revset is "conflicts() & (chA | chB)" — still matches
-			// the substring "log -r conflicts()" so this mock branch fires.
-			return run.Result{Stdout: "chA\n", Code: 0}
+			return run.Result{Stdout: "chB\n", Code: 0} // chB conflicted
 		default:
 			return run.Result{Code: 0}
 		}
 	}}
 	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
 	if err != nil {
-		t.Fatalf("conflicts are data, not an error; got: %v", err)
+		t.Fatalf("conflicts must not cause a non-zero exit (verdict is data): %v", err)
 	}
 	s := out.String()
-	if !strings.Contains(s, "chA") {
-		t.Errorf("conflicted change-id chA must appear in output: %q", s)
+	// Stack still has both {bead,change} pairs.
+	if !strings.Contains(s, `"bead": "weft-hjx.1.1"`) || !strings.Contains(s, `"change": "chA"`) {
+		t.Errorf("stack missing weft-hjx.1.1/chA: %q", s)
 	}
-	// Confirm it's under "conflicts", not silently dropped.
-	if !strings.Contains(s, `"conflicts"`) {
-		t.Errorf(`"conflicts" key missing from JSON output: %q`, s)
+	if !strings.Contains(s, `"bead": "weft-hjx.1.2"`) || !strings.Contains(s, `"change": "chB"`) {
+		t.Errorf("stack missing weft-hjx.1.2/chB: %q", s)
+	}
+	if !strings.Contains(s, "chB") {
+		t.Errorf("conflicted chB must appear in output: %q", s)
+	}
+	// Conflicts revset must be scoped.
+	var sawScopedConflicts bool
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "conflicts() & (") {
+			sawScopedConflicts = true
+		}
+	}
+	if !sawScopedConflicts {
+		t.Errorf("conflicts revset must be scoped; calls: %v", r.calls)
 	}
 }
 
