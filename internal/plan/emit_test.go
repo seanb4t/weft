@@ -5,7 +5,9 @@
 package plan
 
 import (
+	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -63,5 +65,74 @@ func TestGraphJSONDefaultsPriority(t *testing.T) {
 	raw, _ := GraphJSON(wp, Derive(wp.Picks, nil, 1))
 	if !strings.Contains(string(raw), `"priority": 2`) {
 		t.Errorf("expected default priority 2, got %s", raw)
+	}
+}
+
+func TestBuildReplanMatchedCreatedDeferred(t *testing.T) {
+	wp := WarpPlan{
+		Epic: Epic{Title: "E"},
+		Picks: []Pick{
+			{Ref: "a", Title: "A", Description: "a"},
+			{Ref: "b", Title: "B", Description: "b", Needs: []string{"a"}}, // a matched, b new => edge deferred
+		},
+	}
+	d := Derive(wp.Picks, nil, 1)
+	existing := map[string]ExistingBead{"a": {ID: "e.1", Status: "in_progress"}}
+	rp, err := BuildReplan(wp, d, "e", existing)
+	if err != nil {
+		t.Fatalf("BuildReplan: %v", err)
+	}
+	if !reflect.DeepEqual(rp.Updated, []string{"a"}) {
+		t.Errorf("updated = %v", rp.Updated)
+	}
+	if !reflect.DeepEqual(rp.Created, []string{"b"}) {
+		t.Errorf("created = %v", rp.Created)
+	}
+	// b->a touches new ref b (no id yet) => deferred, not in the import payload.
+	if len(rp.DeferredEdges) != 1 || rp.DeferredEdges[0].From != "b" || rp.DeferredEdges[0].To != "a" {
+		t.Errorf("deferred = %v", rp.DeferredEdges)
+	}
+	// matched record must carry id + preserved status + weft-ref label.
+	if !bytes.Contains(rp.JSONL, []byte(`"id":"e.1"`)) {
+		t.Errorf("expected matched id in JSONL: %s", rp.JSONL)
+	}
+	if !bytes.Contains(rp.JSONL, []byte(`"in_progress"`)) {
+		t.Errorf("expected preserved status in JSONL: %s", rp.JSONL)
+	}
+	if !bytes.Contains(rp.JSONL, []byte(`weft-ref:a`)) {
+		t.Errorf("expected weft-ref label in JSONL: %s", rp.JSONL)
+	}
+}
+
+func TestBuildReplanMatchedEdgeBecomesDependency(t *testing.T) {
+	// Both refs matched => the edge is expressed as a dependency by real id.
+	wp := WarpPlan{
+		Epic: Epic{Title: "E"},
+		Picks: []Pick{
+			{Ref: "a", Title: "A", Description: "a"},
+			{Ref: "b", Title: "B", Description: "b", Needs: []string{"a"}},
+		},
+	}
+	d := Derive(wp.Picks, nil, 1)
+	existing := map[string]ExistingBead{"a": {ID: "e.1", Status: "open"}, "b": {ID: "e.2", Status: "open"}}
+	rp, err := BuildReplan(wp, d, "e", existing)
+	if err != nil {
+		t.Fatalf("BuildReplan: %v", err)
+	}
+	if len(rp.DeferredEdges) != 0 {
+		t.Errorf("no edges should defer when both matched: %v", rp.DeferredEdges)
+	}
+	if !bytes.Contains(rp.JSONL, []byte(`"depends_on_id":"e.1"`)) {
+		t.Errorf("expected b->a dependency by id: %s", rp.JSONL)
+	}
+}
+
+func TestBuildReplanRemovedRefs(t *testing.T) {
+	wp := WarpPlan{Epic: Epic{Title: "E"}, Picks: []Pick{{Ref: "a", Title: "A", Description: "a"}}}
+	d := Derive(wp.Picks, nil, 1)
+	existing := map[string]ExistingBead{"a": {ID: "e.1"}, "old": {ID: "e.9"}}
+	rp, _ := BuildReplan(wp, d, "e", existing)
+	if !reflect.DeepEqual(rp.Removed, []string{"old"}) {
+		t.Errorf("removed = %v", rp.Removed)
 	}
 }

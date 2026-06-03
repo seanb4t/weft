@@ -5,6 +5,7 @@
 package plan
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -107,4 +108,99 @@ func sortedPicks(picks []Pick) []Pick {
 	out := append([]Pick{}, picks...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Ref < out[j].Ref })
 	return out
+}
+
+// ExistingBead is one live pick in an emitted warp, keyed by its weft-ref label.
+type ExistingBead struct {
+	ID     string
+	Status string
+}
+
+// importRecord mirrors the subset of the bd export/import schema weft writes
+// per pick (spec §7): upsert keyed by id (empty id => create). Status is set
+// only for matched picks, to preserve their lifecycle state across a re-plan.
+type importRecord struct {
+	ID           string      `json:"id,omitempty"`
+	Title        string      `json:"title"`
+	Description  string      `json:"description,omitempty"`
+	IssueType    string      `json:"issue_type"`
+	Priority     int         `json:"priority"`
+	Status       string      `json:"status,omitempty"`
+	Parent       string      `json:"parent,omitempty"`
+	Labels       []string    `json:"labels"`
+	Dependencies []importDep `json:"dependencies,omitempty"`
+}
+
+type importDep struct {
+	IssueID     string `json:"issue_id"`
+	DependsOnID string `json:"depends_on_id"`
+	Type        string `json:"type"`
+}
+
+// Replan is the computed re-plan delta against an existing warp (spec §7).
+type Replan struct {
+	JSONL         []byte   // bd import payload (one record per pick, newline-delimited)
+	Created       []string // refs with no existing bead (created by import, fields + parent only)
+	Updated       []string // refs matched to an existing bead (fields/labels/edges updated)
+	DeferredEdges []Edge   // edges touching a not-yet-created pick (wired post-import — §8)
+	Removed       []string // refs present in the warp but absent from the plan (supersede is §8)
+}
+
+// BuildReplan computes the bd import upsert payload and the deltas for a re-plan
+// (spec §7). refToID maps known refs to existing beads (from weft-ref labels);
+// epicID parents every record. Edges are expressed as dependencies only when
+// BOTH endpoints already have ids; edges touching a newly created pick are
+// reported as DeferredEdges (their bead-id does not exist until import runs).
+func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]ExistingBead) (Replan, error) {
+	rp := Replan{Created: []string{}, Updated: []string{}, DeferredEdges: []Edge{}, Removed: []string{}}
+
+	// Group resolvable edges (both endpoints matched) by dependent ref.
+	depsByRef := map[string][]importDep{}
+	for _, e := range d.Edges {
+		from, fok := refToID[e.From]
+		to, tok := refToID[e.To]
+		if fok && tok {
+			depsByRef[e.From] = append(depsByRef[e.From], importDep{IssueID: from.ID, DependsOnID: to.ID, Type: EdgeType})
+		} else {
+			rp.DeferredEdges = append(rp.DeferredEdges, e)
+		}
+	}
+
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf) // one JSON object per line (JSONL)
+	for _, pk := range sortedPicks(p.Picks) {
+		bead, matched := refToID[pk.Ref]
+		rec := importRecord{
+			ID:           bead.ID, // "" when unmatched => create
+			Title:        pk.Title,
+			Description:  pk.Description,
+			IssueType:    "task",
+			Priority:     priorityOf(pk),
+			Parent:       epicID,
+			Labels:       labelsFor(pk),
+			Dependencies: depsByRef[pk.Ref],
+		}
+		if matched {
+			rec.Status = bead.Status // preserve lifecycle state (never silently reopen)
+			rp.Updated = append(rp.Updated, pk.Ref)
+		} else {
+			rp.Created = append(rp.Created, pk.Ref)
+		}
+		if err := enc.Encode(rec); err != nil {
+			return Replan{}, err
+		}
+	}
+	rp.JSONL = buf.Bytes()
+
+	inPlan := map[string]bool{}
+	for _, pk := range p.Picks {
+		inPlan[pk.Ref] = true
+	}
+	for ref := range refToID {
+		if !inPlan[ref] {
+			rp.Removed = append(rp.Removed, ref)
+		}
+	}
+	sort.Strings(rp.Removed)
+	return rp, nil
 }
