@@ -15,7 +15,7 @@ import (
 
 func (a *App) newPickCmd() *cobra.Command {
 	pick := &cobra.Command{Use: "pick", Short: "Bead-level pick lifecycle (spec §4.2)"}
-	pick.AddCommand(a.newPickSealCmd(), a.newPickVerifyCmd())
+	pick.AddCommand(a.newPickSealCmd(), a.newPickVerifyCmd(), a.newPickLandCmd())
 	return pick
 }
 
@@ -43,6 +43,43 @@ func (a *App) newPickVerifyCmd() *cobra.Command {
 				verdict = "PASS"
 			}
 			return Emit(cmd, "pick.verify", data, fmt.Sprintf("verify %s: %s", bead, verdict))
+		},
+	}
+}
+
+func (a *App) newPickLandCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "land <bead>",
+		Short: "Land a pick: assert its change is conflict-free, then bd close (spec §4.2)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bead := args[0]
+			change, err := changeOf(a.Runner, bead)
+			if err != nil {
+				return err
+			}
+			if change == "" {
+				return exit.Invocationf("bead %s has no jj-change label (not sealed/integrated)", bead)
+			}
+			// Never land a conflicted change (seam 4 §6): the gate is concrete —
+			// the change must not be in conflicts().
+			res, err := run.JJ(a.Runner, "log", "-r", "conflicts() & "+change, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+			if err != nil {
+				return exit.Hardf("jj conflicts check could not run: %v", err)
+			}
+			if res.Code != 0 {
+				return exit.Hardf("jj conflicts check failed: %s", strings.TrimSpace(res.Stderr))
+			}
+			if strings.TrimSpace(res.Stdout) != "" {
+				return exit.Invocationf("refusing to land %s: change %s is conflicted (resolve first)", bead, change)
+			}
+			if res, err := run.BD(a.Runner, "close", bead, "--suggest-next"); err != nil {
+				return exit.Hardf("bd close could not run: %v", err)
+			} else if res.Code != 0 {
+				return exit.Hardf("bd close %s failed: %s", bead, strings.TrimSpace(res.Stderr))
+			}
+			data := map[string]any{"bead": bead, "change": change}
+			return Emit(cmd, "pick.land", data, fmt.Sprintf("landed %s (change %s)", bead, change))
 		},
 	}
 }

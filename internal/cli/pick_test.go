@@ -80,3 +80,61 @@ func TestPickVerifyRequiresConfiguredGate(t *testing.T) {
 		t.Fatalf("missing gate must be exit 1, got %d", got)
 	}
 }
+
+func TestPickLandRefusesConflictedChange(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show"):
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+		case strings.Contains(j, "conflicts()"):
+			return run.Result{Stdout: "chX\n", Code: 0} // chX IS conflicted
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+	if got := exit.Code(runRoot(r, "pick", "land", "weft-hjx.1.1")); got != 1 {
+		t.Fatalf("landing a conflicted change must be exit 1, got %d", got)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "bd close") {
+			t.Fatalf("must NOT bd close a conflicted pick: %v", r.calls)
+		}
+	}
+}
+
+func TestPickLandClosesCleanChange(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show"):
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+		case strings.Contains(j, "conflicts()"):
+			return run.Result{Stdout: "", Code: 0} // clean
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+	if err := runRoot(r, "pick", "land", "weft-hjx.1.1"); err != nil {
+		t.Fatalf("clean land error: %v", err)
+	}
+	if !contains2(r.calls, "bd close weft-hjx.1.1 --suggest-next") {
+		t.Errorf("expected bd close --suggest-next: %v", r.calls)
+	}
+}
+
+// runRoot executes a command with a fresh root over the given runner.
+func runRoot(r run.Runner, args ...string) error {
+	root := NewRootCmd(&App{Runner: r})
+	root.SetArgs(args)
+	return root.Execute()
+}
+
+func contains2(calls [][]string, want string) bool {
+	for _, c := range calls {
+		if strings.Contains(strings.Join(c, " "), want) {
+			return true
+		}
+	}
+	return false
+}
