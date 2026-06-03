@@ -41,5 +41,6 @@ func NewRootCmd(app *App) *cobra.Command {
 	root.AddCommand(app.newReapCmd())
 	root.AddCommand(app.newPickCmd())
 	root.AddCommand(app.newResumeCmd())
+	root.AddCommand(app.newPlanCmd())
 	return root
 }
