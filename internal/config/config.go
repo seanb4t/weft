@@ -28,6 +28,10 @@ type Config struct {
 	Verify struct {
 		Command string `toml:"command"`
 	} `toml:"verify"`
+	Plan struct {
+		Structural []string `toml:"structural"`
+		OverlapMax *int     `toml:"overlap_max"` // pointer: distinguishes unset from an explicit 0
+	} `toml:"plan"`
 }
 
 // Load reads the TOML config at path. A missing file is not an error — it
@@ -51,4 +55,37 @@ func (c Config) ShedMax() int {
 		return DefaultShedMax
 	}
 	return c.Shed.Max
+}
+
+// DefaultOverlapMax tolerates a single shared incidental (non-structural) file
+// between same-shed picks; 2+ shared files serialize (spec §4.2).
+const DefaultOverlapMax = 1
+
+// DefaultStructural is the language-agnostic starter set of files whose
+// concurrent edit is almost always a real conflict (spec §4.2). Globs match the
+// path or its basename via filepath.Match; ** is unsupported (a §8 refinement).
+func DefaultStructural() []string {
+	return []string{"go.mod", "go.sum", "package.json", "package-lock.json", "Cargo.toml", "Cargo.lock", "*.lock"}
+}
+
+// PlanStructural returns the configured structural globs, or the defaults when
+// none are set.
+func (c Config) PlanStructural() []string {
+	if len(c.Plan.Structural) == 0 {
+		return DefaultStructural()
+	}
+	return c.Plan.Structural
+}
+
+// PlanOverlapMax returns the configured incidental-overlap tolerance, or the
+// default when unset. A negative configured value clamps to 0 (serialize on any
+// non-structural overlap).
+func (c Config) PlanOverlapMax() int {
+	if c.Plan.OverlapMax == nil {
+		return DefaultOverlapMax
+	}
+	if *c.Plan.OverlapMax < 0 {
+		return 0
+	}
+	return *c.Plan.OverlapMax
 }
