@@ -139,11 +139,20 @@ type importDep struct {
 
 // Replan is the computed re-plan delta against an existing warp (spec §7).
 type Replan struct {
-	JSONL         []byte   // bd import payload (one record per pick, newline-delimited)
+	jsonl         []byte   // bd import payload (one record per pick, newline-delimited)
 	Created       []string // refs with no existing bead (created by import, fields + parent only)
 	Updated       []string // refs matched to an existing bead (fields/labels/edges updated)
 	DeferredEdges []Edge   // edges touching a not-yet-created pick (wired post-import — §8)
 	Removed       []string // refs present in the warp but absent from the plan (supersede is §8)
+}
+
+// JSONL returns a defensive copy of the bd import wire payload so callers
+// cannot mutate the underlying bytes or cause the payload to drift from the
+// Created/Updated/Removed/DeferredEdges delta slices.
+func (r Replan) JSONL() []byte {
+	out := make([]byte, len(r.jsonl))
+	copy(out, r.jsonl)
+	return out
 }
 
 // BuildReplan computes the bd import upsert payload and the deltas for a re-plan
@@ -198,7 +207,7 @@ func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]Exi
 			return Replan{}, err
 		}
 	}
-	rp.JSONL = buf.Bytes()
+	rp.jsonl = buf.Bytes()
 
 	inPlan := map[string]bool{}
 	for _, pk := range p.Picks {
