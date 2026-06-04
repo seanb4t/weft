@@ -63,14 +63,11 @@ func (a *App) newPickLandCmd() *cobra.Command {
 			}
 			// Never land a conflicted change (seam 4 §6): the gate is concrete —
 			// the change must not be in conflicts().
-			res, err := run.JJ(a.Runner, "log", "-r", "conflicts() & "+change, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+			conflicted, err := changeConflicted(a.Runner, change)
 			if err != nil {
-				return exit.Hardf("jj conflicts check could not run: %v", err)
+				return err
 			}
-			if res.Code != 0 {
-				return exit.Hardf("jj conflicts check failed: %s", strings.TrimSpace(res.Stderr))
-			}
-			if strings.TrimSpace(res.Stdout) != "" {
+			if conflicted {
 				return exit.Invocationf("refusing to land %s: change %s is conflicted (resolve first)", bead, change)
 			}
 			if res, err := run.BD(a.Runner, "close", bead, "--suggest-next"); err != nil {
