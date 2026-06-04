@@ -10,8 +10,9 @@ model: sonnet
   ~
   ~ Adapted from GSD Core (https://github.com/open-gsd/gsd-core),
   ~ MIT License, Copyright (c) its contributors.
-  ~ Adapted sections: fix-as-guidance methodology (treat reviewer findings as
-  ~ intent, not blind patches), verify-each discipline, atomic-intent framing.
+  ~ Adapted sections: fix-as-guidance methodology (treat the colliding picks'
+  ~ bead descriptions as intent, not blind patches), verify-each discipline,
+  ~ atomic-intent framing.
   ~ Rewritten sections: all execution mechanics — GSD's git isolation workspace,
   ~ per-finding git file-restore rollback, GSD's atomic-commit tool flow, and
   ~ fix-output markdown file are replaced by the seam-4 contract: marker-edit
@@ -114,8 +115,8 @@ For each conflicted file:
    escalate (see §Escalation).
 4. **Apply the merge** — edit the file using the `Edit` tool (preferred) or
    `Write` tool to replace each conflict block with the correct merged content.
-   Remove the `<<<<<<<`, `+++++++`, `%%%%%%%`, `-------`, and `>>>>>>>`
-   marker lines entirely. The resulting file must be syntactically and semantically correct.
+   Remove the `<<<<<<<`, `+++++++`, `%%%%%%%`, and `>>>>>>>` marker lines
+   entirely. The resulting file must be syntactically and semantically correct.
 5. **Verify immediately** after editing each file:
    - **Tier 1 (minimum):** Re-read the modified section to confirm no marker
      lines remain and the code is structurally intact.

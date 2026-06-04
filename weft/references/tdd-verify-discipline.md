@@ -23,30 +23,41 @@ write `expect(fn(input)).toBe(output)` before writing `fn`, TDD is warranted.
 Mechanical tasks (configuration, simple CRUD, formatting) do not require a TDD
 bead.
 
+The red→green→refactor phases are **editing phases inside the single
+working-copy change** — they are NOT separate jj commits. The CLAUDE.md
+invariant is "pick — one woven change (one bead → one jj change)"; issuing
+intermediate `jj commit` calls between phases would fork the bead–change spine
+and leave `weft pick seal`'s `jj-change:<id>` label ambiguous (see
+`weft/agents/weft-executor.md` § "Commit sequence (TDD path)" and
+`weft/references/bead-change-spine.md`). jj auto-snapshots the working copy on
+every save, so intermediate states are recoverable via `jj --no-pager evolog`
+without explicit per-phase commits.
+
 ### Phase 1 — RED
 
 Write a test that describes the expected behavior. Run it. It MUST fail.
 
 - If the test passes without implementation, stop: the feature already exists
   or the test is wrong. Do not proceed.
-- Commit the failing test in its own jj change:
-  `test(<scope>): add failing test for <feature>`
+- This is an editing phase — do NOT commit the failing test separately.
 
 ### Phase 2 — GREEN
 
 Write the minimal code to make the test pass. Run it. It MUST pass.
 
 - Do not gold-plate. Only make the test green.
-- Commit the implementation:
-  `feat(<scope>): implement <feature>`
+- Editing phase — no intermediate commit.
 
 ### Phase 3 — REFACTOR
 
-If the implementation has obvious structural problems, clean it up. Verify
-tests still pass. Commit only if changes were made:
-`refactor(<scope>): clean up <feature>`
+If the implementation has obvious structural problems, clean it up within the
+same working-copy change. Verify tests still pass.
 
-Each TDD pick results in 2–3 atomic jj changes (RED, GREEN, optional REFACTOR).
+### Seal
+
+The whole pick is sealed exactly once via `weft pick seal <bead>`, which
+produces the single jj change (`<type>(<bead-id>): <title>`) and writes the
+`jj-change:<id>` spine label. One pick → one sealed change, never 2–3.
 
 ## Verify gate
 
@@ -70,24 +81,28 @@ for a hard `jj`/`bd` failure), NOT that the gate said no. The verdict is
 Orchestrators branch on `.data.pass`; agents never inspect a separate artifact
 to learn the gate result.
 
-### Gate sequence validation
+### Gate checks
 
-When `tdd_mode` is active in `weft.yaml`, the gate enforces RED/GREEN commit
-sequence before allowing seal:
+Because a pick is a single working-copy change (no per-phase commits), the gate
+cannot — and does not — inspect commit topology for RED/GREEN ordering. When
+`tdd_mode` is active in `weft.yaml`, the gate verifies the *end state* of the
+change instead:
 
-1. Checks the jj log for a `test(...)` (RED) commit in the change.
-2. Checks for a `feat(...)` (GREEN) commit.
-3. If either is absent, the gate fails with a structured diagnostic and the
-   bead remains in `active` phase.
+1. The change adds or modifies at least one test exercising the bead's feature.
+2. The test suite passes (the GREEN state).
+
+RED-before-GREEN ordering is a process discipline the executor follows within
+the single change (Phase 1 above); it is not reconstructable from a one-commit
+change, so the gate does not assert it.
 
 ### Fail-fast rules
 
 | Situation | Gate action |
 |-----------|-------------|
-| RED test passes unexpectedly | FAIL — feature may already exist |
+| RED test passes unexpectedly (during Phase 1) | Executor STOPs — feature may already exist |
 | GREEN test still fails | FAIL — implementation incomplete |
-| No RED commit in jj log (tdd_mode=true) | FAIL — discipline violated |
-| All checks pass | PASS → `weft pick seal` proceeds |
+| No test present in the change (tdd_mode=true) | FAIL — discipline violated |
+| Tests present and passing | PASS → `weft pick seal` proceeds |
 
 ## Fresh-context dispatch principle
 

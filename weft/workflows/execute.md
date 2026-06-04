@@ -80,10 +80,11 @@ pick, into that pick's isolated workspace, with the bead-id as its only
 cross-session anchor. The executor does not share state with sibling executors
 in the same wave.
 
-The model used for each executor is determined by the `model:*` label on the
-agent's frontmatter (defaulting to `sonnet` as declared in
-`weft/agents/weft-executor.md`). The orchestrator reads this label before
-dispatch and routes accordingly.
+The model used for each executor is determined by the bead's `model:*` label
+(the per-bead routing convention — see `weft/references/bead-change-spine.md`),
+falling back to the default declared in the agent's frontmatter (`sonnet` for
+`weft/agents/weft-executor.md`) when the bead carries no `model:*` label. The
+orchestrator reads the bead label before dispatch and routes accordingly.
 
 ---
 
@@ -280,10 +281,10 @@ an empty wave. This occurs when:
   external dependencies.
 
 There is no explicit finish verb in this loop. Epic-level finishing (PR
-assembly, bookmark management) is a separate concern handled by the epic-level
-verbs (`finish open` / `finish reconcile`) — those are not part of the execute
-loop and are not invoked here. The execute workflow's responsibility ends when
-the ready set is empty.
+assembly, bookmark management) is a separate concern, outside the execute loop
+and not invoked here — it is deferred engine work, not yet part of the stable
+verb surface this workflow restricts itself to. The execute workflow's
+responsibility ends when the ready set is empty.
 
 ---
 
