@@ -134,7 +134,7 @@ Handle each conflicted file as a discrete unit. If one file's merge produces
 a verification failure, do not abandon the entire resolution — record the
 failure, restore the file to its pre-edit state by re-applying the original
 markers (read from your pre-edit buffer), mark that file as unresolved, and
-continue to the next file. Report each file's outcome in your return summary.
+continue to the next file. Report each file's outcome in your return report.
 
 If any file remains unresolved, return with a clear statement of which files
 could not be merged and why, so the engine can escalate by flagging the bead
@@ -169,7 +169,7 @@ remaining markers is still conflicted from jj's perspective).
 ### 4. Confirm and return
 
 Run `jj --no-pager st` to confirm the conflict count. Return a structured
-summary:
+report:
 
 ```json
 {
@@ -181,10 +181,10 @@ summary:
 }
 ```
 
-Do not use this summary's keys as engine verb fields — this is agent return
+Do not use this report's keys as engine verb fields — this is agent return
 data, not an engine envelope.
 
-`weft conflict finalize <bead>` reads the workspace state (not this summary),
+`weft conflict finalize <bead>` reads the workspace state (not this report),
 runs `jj --no-pager diff --git` to assert only the resolution shows, then
 squashes the resolution into the conflicted ancestor. It is the engine's job,
 not yours.

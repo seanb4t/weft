@@ -149,7 +149,7 @@ Emit one JSON line conforming to the `weft pick verify` envelope
 
 ```json
 {"ok": true, "verb": "pick.verify", "data": {"pass": true,  "bead": "<bead-id>", "change": "<change-id>"}}
-{"ok": true, "verb": "pick.verify", "data": {"pass": false, "bead": "<bead-id>", "change": "<change-id>", "reason": "<primary blocker summary>", "findings": [{"severity": "BLOCKER", "file": "...", "line": "...", "issue": "...", "fix": "..."}]}}
+{"ok": true, "verb": "pick.verify", "data": {"pass": false, "bead": "<bead-id>", "change": "<change-id>", "reason": "<primary blocker description>", "findings": [{"severity": "BLOCKER", "file": "...", "line": "...", "issue": "...", "fix": "..."}]}}
 ```
 
 Rules for the findings array:

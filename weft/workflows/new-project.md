@@ -59,7 +59,7 @@ The host runtime dispatches these as parallel agent invocations (Claude Code
 workflow describes the step, not the plumbing). Each investigative pass
 produces a brief synthesis of findings (held in context, not written to
 files). When all four passes are complete, synthesise them into a unified
-research summary held in working context.
+research digest held in working context.
 
 ---
 
@@ -88,7 +88,7 @@ not written to separate markdown files.
 
 Dispatch the `weft-planner` agent with the following context:
 
-- The synthesised research summary.
+- The synthesised research digest.
 - The confirmed v1 requirement list (with IDs).
 - The project's primary observable goal and stated constraints.
 
