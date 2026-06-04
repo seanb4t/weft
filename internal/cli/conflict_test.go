@@ -20,11 +20,11 @@ func TestConflictOpenCreatesResolveWorkspace(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show weft-hjx.4.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
 		case strings.Contains(j, "jj") && strings.Contains(j, "root"):
 			return run.Result{Stdout: "/repo/weft", Code: 0}
-		case strings.Contains(j, "conflicts() & chB"):
-			return run.Result{Stdout: "chB\n", Code: 0} // chB IS conflicted -> proceed
+		case strings.Contains(j, "conflicts() & chb"):
+			return run.Result{Stdout: "chb\n", Code: 0} // chb IS conflicted -> proceed
 		default: // workspace add, config set
 			return run.Result{Code: 0}
 		}
@@ -36,7 +36,7 @@ func TestConflictOpenCreatesResolveWorkspace(t *testing.T) {
 	var sawAdd, sawMarker bool
 	for _, c := range r.calls {
 		j := strings.Join(c, " ")
-		if strings.Contains(j, "workspace add") && strings.Contains(j, "weft-hjx__4__2-resolve") && strings.Contains(j, "-r chB") {
+		if strings.Contains(j, "workspace add") && strings.Contains(j, "weft-hjx__4__2-resolve") && strings.Contains(j, "-r chb") {
 			sawAdd = true
 		}
 		if strings.Contains(j, "config set --repo ui.conflict-marker-style diff") {
@@ -44,12 +44,12 @@ func TestConflictOpenCreatesResolveWorkspace(t *testing.T) {
 		}
 	}
 	if !sawAdd {
-		t.Errorf("expected workspace add of weft-hjx__4__2-resolve at -r chB; calls=%v", r.calls)
+		t.Errorf("expected workspace add of weft-hjx__4__2-resolve at -r chb; calls=%v", r.calls)
 	}
 	if !sawMarker {
 		t.Errorf("expected ui.conflict-marker-style=diff; calls=%v", r.calls)
 	}
-	if !strings.Contains(out.String(), `"change": "chB"`) {
+	if !strings.Contains(out.String(), `"change": "chb"`) {
 		t.Errorf("brief missing change: %q", out.String())
 	}
 }
@@ -59,10 +59,10 @@ func TestConflictOpenRefusesUnconflictedChange(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
 		case strings.Contains(j, "jj") && strings.Contains(j, "root"):
 			return run.Result{Stdout: "/repo/weft", Code: 0}
-		case strings.Contains(j, "conflicts() & chB"):
+		case strings.Contains(j, "conflicts() & chb"):
 			return run.Result{Stdout: "", Code: 0} // NOT conflicted
 		default:
 			return run.Result{Code: 0}
@@ -79,7 +79,7 @@ func TestConflictOpenRefusesUnconflictedChange(t *testing.T) {
 }
 
 // TestConflictFinalizeSquashesAndReaps verifies the happy path: resolver cleared
-// markers, squash folds the resolution in, workspace is reaped, healed=[chB].
+// markers, squash folds the resolution in, workspace is reaped, healed=[chb].
 // F3: uses t.TempDir() as jj root so os.Stat(resolve path) succeeds.
 // F8: structurally decodes the envelope to assert healed/remaining_conflicts shape.
 func TestConflictFinalizeSquashesAndReaps(t *testing.T) {
@@ -93,14 +93,14 @@ func TestConflictFinalizeSquashesAndReaps(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show weft-hjx.4.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
 		case strings.Contains(j, "jj") && strings.Contains(j, "root"):
 			return run.Result{Stdout: root, Code: 0}
 		case strings.Contains(j, "conflicts() & weft-hjx__4__2-resolve@"):
 			return run.Result{Stdout: "", Code: 0} // resolver cleared the markers
 		case strings.Contains(j, "diff --git -r weft-hjx__4__2-resolve@"):
 			return run.Result{Stdout: "diff --git a/x b/x\n+fixed\n", Code: 0} // non-empty resolution
-		case strings.Contains(j, "conflicts()") && strings.Contains(j, "descendants(chB)"):
+		case strings.Contains(j, "conflicts()") && strings.Contains(j, "descendants(chb)"):
 			return run.Result{Stdout: "", Code: 0} // post-squash: nothing conflicted -> healed
 		default: // squash, workspace forget
 			return run.Result{Code: 0}
@@ -113,7 +113,7 @@ func TestConflictFinalizeSquashesAndReaps(t *testing.T) {
 	var sawSquash, sawForget bool
 	for _, c := range r.calls {
 		j := strings.Join(c, " ")
-		if strings.Contains(j, "squash --from weft-hjx__4__2-resolve@ --into chB") {
+		if strings.Contains(j, "squash --from weft-hjx__4__2-resolve@ --into chb") {
 			sawSquash = true
 		}
 		if strings.Contains(j, "workspace forget weft-hjx__4__2-resolve") {
@@ -121,12 +121,12 @@ func TestConflictFinalizeSquashesAndReaps(t *testing.T) {
 		}
 	}
 	if !sawSquash {
-		t.Errorf("expected squash --from <resolve>@ --into chB; calls=%v", r.calls)
+		t.Errorf("expected squash --from <resolve>@ --into chb; calls=%v", r.calls)
 	}
 	if !sawForget {
 		t.Errorf("expected reap (workspace forget) of the resolution workspace; calls=%v", r.calls)
 	}
-	// F8: structural decode — assert healed=[chB] and remaining_conflicts=[] specifically.
+	// F8: structural decode — assert healed=[chb] and remaining_conflicts=[] specifically.
 	// A bare substring check on {bead,change} is insufficient because stack[] also carries
 	// those pairs. Decoding into a struct fails outright on a wrong shape.
 	var env struct {
@@ -138,8 +138,8 @@ func TestConflictFinalizeSquashesAndReaps(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.String()), &env); err != nil {
 		t.Fatalf("decode envelope: %v; out=%q", err, out.String())
 	}
-	if len(env.Data.Healed) != 1 || env.Data.Healed[0] != "chB" {
-		t.Errorf("healed = %v; want [chB]", env.Data.Healed)
+	if len(env.Data.Healed) != 1 || env.Data.Healed[0] != "chb" {
+		t.Errorf("healed = %v; want [chb]", env.Data.Healed)
 	}
 	if len(env.Data.RemainingConflicts) != 0 {
 		t.Errorf("remaining_conflicts = %v; want []", env.Data.RemainingConflicts)
@@ -157,11 +157,11 @@ func TestConflictFinalizeEscalatesWhenStillConflicted(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
 		case strings.Contains(j, "jj") && strings.Contains(j, "root"):
 			return run.Result{Stdout: root, Code: 0}
 		case strings.Contains(j, "conflicts() & weft-hjx__4__2-resolve@"):
-			return run.Result{Stdout: "chB\n", Code: 0} // STILL conflicted -> escalate
+			return run.Result{Stdout: "chb\n", Code: 0} // STILL conflicted -> escalate
 		default:
 			return run.Result{Code: 0}
 		}
@@ -205,7 +205,7 @@ func TestConflictFinalizeRefusesEmptyResolution(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show weft-hjx.4.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
 		case strings.Contains(j, "jj") && strings.Contains(j, "root"):
 			return run.Result{Stdout: root, Code: 0}
 		case strings.Contains(j, "conflicts() & weft-hjx__4__2-resolve@"):
@@ -227,6 +227,75 @@ func TestConflictFinalizeRefusesEmptyResolution(t *testing.T) {
 	}
 }
 
+// TestChangeConflictedRejectsUnsafeRev verifies that changeConflicted short-circuits
+// before any jj invocation when the revision contains revset metacharacters.
+func TestChangeConflictedRejectsUnsafeRev(t *testing.T) {
+	badRevs := []string{"all()", "x & y", "a::b", "a|b", "..", "a b", "@", ""}
+	for _, bad := range badRevs {
+		t.Run(bad, func(t *testing.T) {
+			r := &routeRunner{fn: func(name string, args []string) run.Result {
+				return run.Result{Code: 0}
+			}}
+			_, err := changeConflicted(r, bad)
+			if err == nil {
+				t.Fatalf("changeConflicted(%q) returned nil error; want exit-2", bad)
+			}
+			if code := exit.Code(err); code != 2 {
+				t.Errorf("changeConflicted(%q) exit code = %d; want 2", bad, code)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("changeConflicted(%q) must not invoke jj; got calls=%v", bad, r.calls)
+			}
+		})
+	}
+}
+
+// TestChangeConflictedAcceptsValidRevShapes verifies that a bare change-id and a
+// workspace working-copy ref both pass the allowlist and reach jj.
+func TestChangeConflictedAcceptsValidRevShapes(t *testing.T) {
+	validRevs := []string{"kxqpmsqz", "weft-hjx__4__2-resolve@"}
+	for _, rev := range validRevs {
+		t.Run(rev, func(t *testing.T) {
+			r := &routeRunner{fn: func(name string, args []string) run.Result {
+				return run.Result{Stdout: "", Code: 0}
+			}}
+			got, err := changeConflicted(r, rev)
+			if err != nil {
+				t.Fatalf("changeConflicted(%q) returned error: %v", rev, err)
+			}
+			if got != false {
+				t.Errorf("changeConflicted(%q) = %v; want false (empty stdout)", rev, got)
+			}
+			if len(r.calls) == 0 {
+				t.Errorf("changeConflicted(%q) must invoke jj; got no calls", rev)
+			}
+		})
+	}
+}
+
+// TestScopedConflictChangesRejectsUnsafeRev verifies that scopedConflictChanges
+// short-circuits before any jj invocation when rootChange contains metacharacters.
+func TestScopedConflictChangesRejectsUnsafeRev(t *testing.T) {
+	badRevs := []string{"descendants(all())", "a & b", "all()", ""}
+	for _, bad := range badRevs {
+		t.Run(bad, func(t *testing.T) {
+			r := &routeRunner{fn: func(name string, args []string) run.Result {
+				return run.Result{Code: 0}
+			}}
+			_, err := scopedConflictChanges(r, bad)
+			if err == nil {
+				t.Fatalf("scopedConflictChanges(%q) returned nil error; want exit-2", bad)
+			}
+			if code := exit.Code(err); code != 2 {
+				t.Errorf("scopedConflictChanges(%q) exit code = %d; want 2", bad, code)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("scopedConflictChanges(%q) must not invoke jj; got calls=%v", bad, r.calls)
+			}
+		})
+	}
+}
+
 // TestConflictFinalizeRequiresOpenWorkspace verifies that calling finalize without
 // a prior `conflict open` (no resolve workspace on disk) returns exit 1 (Invocation)
 // and does NOT attempt squash or workspace forget. (F3)
@@ -237,7 +306,7 @@ func TestConflictFinalizeRequiresOpenWorkspace(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show weft-hjx.4.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
 		case strings.Contains(j, "jj") && strings.Contains(j, "root"):
 			return run.Result{Stdout: root, Code: 0}
 		default:

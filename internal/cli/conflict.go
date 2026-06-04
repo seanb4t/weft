@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/seanb4t/weft/internal/exit"
@@ -14,6 +15,17 @@ import (
 	"github.com/seanb4t/weft/internal/workspace"
 	"github.com/spf13/cobra"
 )
+
+// changeIDPattern matches a bare jj change-id. jj renders change-ids in a
+// lowercase alphabet; restricting to [a-z0-9] excludes every revset
+// metacharacter (& | : . ( ) ~ and whitespace), so a tampered jj-change
+// label cannot alter revset evaluation when interpolated.
+var changeIDPattern = regexp.MustCompile(`^[a-z0-9]+$`)
+
+// workspaceRevPattern matches a "<workspace-name>@" working-copy reference,
+// where the name is a Sanitize()d bead-id ([a-z0-9_-]); it likewise excludes
+// revset metacharacters apart from the trailing '@' addressing operator.
+var workspaceRevPattern = regexp.MustCompile(`^[a-z0-9_-]+@$`)
 
 func (a *App) newConflictCmd() *cobra.Command {
 	c := &cobra.Command{Use: "conflict", Short: "Conflict-resolution choreography (spec seam 4)"}
@@ -24,6 +36,9 @@ func (a *App) newConflictCmd() *cobra.Command {
 // changeConflicted reports whether a revision is in jj's conflicts() set. The
 // revision may be a change-id or a <workspace-name>@ working-copy reference.
 func changeConflicted(r run.Runner, rev string) (bool, error) {
+	if !changeIDPattern.MatchString(rev) && !workspaceRevPattern.MatchString(rev) {
+		return false, exit.Hardf("refusing to interpolate unsafe revision %q into a revset", rev)
+	}
 	res, err := run.JJ(r, "log", "-r", "conflicts() & "+rev, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 	if err != nil {
 		return false, exit.Hardf("jj conflicts check could not run: %v", err)
@@ -39,6 +54,9 @@ func changeConflicted(r run.Runner, rev string) (bool, error) {
 // resume's repo-wide conflictChanges, finalize uses this as the orchestrator's
 // loop-termination gate, so it must not surface conflicts from unrelated epics.
 func scopedConflictChanges(r run.Runner, rootChange string) ([]string, error) {
+	if !changeIDPattern.MatchString(rootChange) {
+		return nil, exit.Hardf("refusing to interpolate unsafe revision %q into a revset", rootChange)
+	}
 	res, err := run.JJ(r, "log", "-r", "conflicts() & descendants("+rootChange+")", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 	if err != nil {
 		return nil, exit.Hardf("jj scoped conflicts check could not run: %v", err)

@@ -86,9 +86,9 @@ func TestPickLandRefusesConflictedChange(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show"):
-			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chx"]}]`, Code: 0}
 		case strings.Contains(j, "conflicts()"):
-			return run.Result{Stdout: "chX\n", Code: 0} // chX IS conflicted
+			return run.Result{Stdout: "chx\n", Code: 0} // chx IS conflicted
 		default:
 			return run.Result{Code: 0}
 		}
@@ -108,7 +108,7 @@ func TestPickLandClosesCleanChange(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show"):
-			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chx"]}]`, Code: 0}
 		case strings.Contains(j, "conflicts()"):
 			return run.Result{Stdout: "", Code: 0} // clean
 		default:
@@ -142,15 +142,15 @@ func contains2(calls [][]string, want string) bool {
 func TestPickRedoAbandonsAndReopens(t *testing.T) {
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd show") {
-			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chx"]}]`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
 	if err := runRoot(r, "pick", "redo", "weft-hjx.1.1"); err != nil {
 		t.Fatalf("redo error: %v", err)
 	}
-	if !contains2(r.calls, "jj --no-pager abandon chX") {
-		t.Errorf("expected jj abandon chX: %v", r.calls)
+	if !contains2(r.calls, "jj --no-pager abandon chx") {
+		t.Errorf("expected jj abandon chx: %v", r.calls)
 	}
 	if !contains2(r.calls, "bd update weft-hjx.1.1 --status open") {
 		t.Errorf("expected bd update --status open: %v", r.calls)
@@ -201,7 +201,7 @@ func TestPickLandHardFailsOnConflictsCheckError(t *testing.T) {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
 		case strings.Contains(j, "bd show"):
-			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chX"]}]`, Code: 0}
+			return run.Result{Stdout: `[{"title":"t","status":"in_progress","labels":["jj-change:chx"]}]`, Code: 0}
 		case strings.Contains(j, "conflicts()"):
 			return run.Result{Code: 1, Stderr: "boom"}
 		default:
