@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 )
 
 // Epic is the warp-plan.json epic block (spec §3): the ship unit (§6).
@@ -48,6 +49,12 @@ type Issue struct {
 // EpicKey is the internal bd create --graph node key for the epic. It is not a
 // valid pick ref (Validate rejects a colliding ref), so it never clashes.
 const EpicKey = "@epic"
+
+// refPattern enforces the §3 character-set contract: refs are stamped verbatim
+// into weft-ref:<ref> labels and used as bd create --graph node keys, so colons
+// (the label namespace separator), commas, whitespace, and control characters
+// are disallowed to prevent ambiguous label round-trips.
+var refPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 // Parse decodes warp-plan.json bytes. Unknown fields are tolerated for
 // forward-compatibility; Validate enforces the required shape.
@@ -92,6 +99,9 @@ func Validate(p WarpPlan) []Issue {
 			issues = append(issues, Issue{Ref: pk.Ref, Message: "duplicate pick.ref"})
 		}
 		seen[pk.Ref] = true
+		if !refPattern.MatchString(pk.Ref) {
+			issues = append(issues, Issue{Ref: pk.Ref, Message: fmt.Sprintf("pick.ref %q contains invalid characters (allowed: a-z A-Z 0-9 . _ -)", pk.Ref)})
+		}
 		if pk.Title == "" {
 			issues = append(issues, Issue{Ref: pk.Ref, Message: "pick.title is required"})
 		}
