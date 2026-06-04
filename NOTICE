@@ -1,0 +1,11 @@
+Weft
+Copyright 2026 Weft Contributors
+
+This product includes methodology and prompt structure adapted from
+GSD Core (https://github.com/open-gsd/gsd-core), licensed under the MIT
+License, Copyright (c) its contributors.
+
+Adapted prompt sections (planning methodology, executor TDD discipline,
+review rigor, fix-as-guidance) under weft/agents/ and weft/commands/ carry
+per-file "adapted from gsd-<x>.md" provenance notes. Rewritten sections
+(beads + jj mechanics) are original work under Apache-2.0.
