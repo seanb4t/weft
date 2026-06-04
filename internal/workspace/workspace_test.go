@@ -4,7 +4,10 @@
 
 package workspace
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestSanitizeRoundTrip(t *testing.T) {
 	for _, id := range []string{"weft-hjx", "weft-hjx.1", "weft-hjx.1.3"} {
@@ -70,5 +73,38 @@ func TestRootAndPath(t *testing.T) {
 	}
 	if got := Path("/a/b/weft", "", "weft-hjx.1"); got != "/a/b/weft_worktrees/weft-hjx__1" {
 		t.Errorf("Path = %q", got)
+	}
+}
+
+func TestResolveNameAndPath(t *testing.T) {
+	name := ResolveName("weft-hjx.4.2")
+	if name != "weft-hjx__4__2-resolve" {
+		t.Fatalf("ResolveName = %q, want weft-hjx__4__2-resolve", name)
+	}
+	// Round-trips through the existing kind-aware Resolve.
+	bead, kind := Resolve(name)
+	if bead != "weft-hjx.4.2" || kind != KindResolve {
+		t.Fatalf("Resolve(%q) = %q,%v; want weft-hjx.4.2,resolve", name, bead, kind)
+	}
+	p := ResolvePath("/repo", "", "weft-hjx.4.2")
+	if filepath.Base(p) != name {
+		t.Fatalf("ResolvePath base = %q, want %q", filepath.Base(p), name)
+	}
+	// Same worktrees root as an executor workspace, different leaf.
+	if filepath.Dir(p) != filepath.Dir(Path("/repo", "", "weft-hjx.4.2")) {
+		t.Fatalf("ResolvePath root = %q, want same as Path root", filepath.Dir(p))
+	}
+}
+
+// TestContainsRejectsEscape (F7): Contains must reject paths that escape the
+// worktrees root via "../" traversal. This is defense-in-depth for the
+// os.RemoveAll guards in finalize and shed cleanup (ResolvePath always yields
+// an in-root path, but the guard catches any future refactor that might not).
+func TestContainsRejectsEscape(t *testing.T) {
+	if Contains("/repo/wt", "/repo/wt/../evil") {
+		t.Errorf("Contains must reject path escaping root via ../")
+	}
+	if !Contains("/repo/wt", "/repo/wt/ok") {
+		t.Errorf("Contains must accept path inside root")
 	}
 }

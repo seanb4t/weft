@@ -212,10 +212,26 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			if res.Code != 0 {
 				return exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
 			}
-			conflicts := []string{}
+			// Map each conflicted change-id back to its owning bead via the
+			// stack we just built, so the orchestrator can `conflict open <bead>`
+			// (seam 4 §3). paths/lowest_ancestor enrichment is deferred (§8).
+			// F6: conflicts[] uses [{bead,change}] — the actionable orchestrator-input
+			// form (each entry is directly consumable by `conflict open <bead>`),
+			// distinct from resume's observability []string form (see conflictChanges).
+			changeToBead := map[string]string{}
+			for _, e := range stack {
+				changeToBead[e["change"]] = e["bead"]
+			}
+			conflicts := []map[string]string{}
 			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+				// F4: guard against a conflicted change-id not in the integration stack.
+				// A missing key would silently produce bead:"" (misleading for orchestrators).
 				if ln = strings.TrimSpace(ln); ln != "" {
-					conflicts = append(conflicts, ln)
+					b, ok := changeToBead[ln]
+					if !ok {
+						return exit.Hardf("conflicted change %s is not in the integration stack — cannot map it to a bead", ln)
+					}
+					conflicts = append(conflicts, map[string]string{"bead": b, "change": ln})
 				}
 			}
 
@@ -227,7 +243,11 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			data := map[string]any{"stack": stack, "conflicts": conflicts}
 			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changeIDs, " -> "))
 			if len(conflicts) > 0 {
-				text += fmt.Sprintf("  [%d conflicted: %s]", len(conflicts), strings.Join(conflicts, " "))
+				ids := make([]string, 0, len(conflicts))
+				for _, c := range conflicts {
+					ids = append(ids, c["change"])
+				}
+				text += fmt.Sprintf("  [%d conflicted: %s]", len(conflicts), strings.Join(ids, " "))
 			}
 			return Emit(cmd, "shed.integrate", data, text)
 		},

@@ -89,6 +89,11 @@ func readyIDs(r run.Runner, epic string) ([]string, error) {
 // as `conflicts() & <change>` — resume is read-only observability, so the cost
 // is a display inaccuracy, not a wrong verdict. weft-hjx.6 tracks scoping this
 // to the epic's stack (intersect with the epic beads' jj-change ids).
+//
+// F6 (schema note): resume emits conflicts as bare change-ids ([]string) for
+// observability; the actionable [{bead,change}] form is shed integrate's (which
+// can map each conflicted change to its owning bead via the wave stack, enabling
+// the orchestrator to directly call `conflict open <bead>`).
 func conflictChanges(r run.Runner) ([]string, error) {
 	res, err := run.JJ(r, "log", "-r", "conflicts()", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 	if err != nil {

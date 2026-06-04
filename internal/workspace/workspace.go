@@ -64,6 +64,17 @@ func Path(jjRoot, cfgRoot, beadID string) string {
 	return filepath.Join(Root(jjRoot, cfgRoot), Name(beadID))
 }
 
+// ResolveName returns the resolution-workspace name for a bead (seam 4 §4.1):
+// the executor name plus the -resolve suffix that marks the second kind. Resolve
+// inverts it back to the owning bead-id + KindResolve.
+func ResolveName(beadID string) string { return Name(beadID) + resolveSuffix }
+
+// ResolvePath returns the absolute resolution-workspace directory for a bead —
+// the same worktrees root as Path, with the -resolve leaf.
+func ResolvePath(jjRoot, cfgRoot, beadID string) string {
+	return filepath.Join(Root(jjRoot, cfgRoot), ResolveName(beadID))
+}
+
 // Contains reports whether child resolves to a path at or inside parent. The
 // destructive verbs (ws forget, shed cleanup, weft reap) guard their
 // os.RemoveAll target with it so a bead-id or jj workspace name carrying "/" or
