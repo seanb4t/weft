@@ -95,3 +95,16 @@ func TestResolveNameAndPath(t *testing.T) {
 		t.Fatalf("ResolvePath root = %q, want same as Path root", filepath.Dir(p))
 	}
 }
+
+// TestContainsRejectsEscape (F7): Contains must reject paths that escape the
+// worktrees root via "../" traversal. This is defense-in-depth for the
+// os.RemoveAll guards in finalize and shed cleanup (ResolvePath always yields
+// an in-root path, but the guard catches any future refactor that might not).
+func TestContainsRejectsEscape(t *testing.T) {
+	if Contains("/repo/wt", "/repo/wt/../evil") {
+		t.Errorf("Contains must reject path escaping root via ../")
+	}
+	if !Contains("/repo/wt", "/repo/wt/ok") {
+		t.Errorf("Contains must accept path inside root")
+	}
+}

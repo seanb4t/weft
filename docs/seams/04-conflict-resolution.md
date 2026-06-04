@@ -66,6 +66,12 @@ while conflicts() is non-empty:
 Independent (non-conflicted) picks in the wave proceed to verify/land normally;
 only the picks under an unresolved conflict are blocked.
 
+**Conflicts array schema note:** `shed integrate.conflicts[]` is `[{bead, change}]`
+(actionable) — each entry is directly consumable by `conflict open <bead>`, and
+the orchestrator uses this form to drive the resolution loop above. By contrast,
+`resume.conflicts[]` is `[]string` (bare change-ids, observability only); resume
+cannot map change-ids to beads because it does not have access to the wave stack.
+
 ## 4. The `weft conflict` verbs
 
 Extends the [seam 1](01-command-surface.md) surface. Two coarse verbs **bracket**

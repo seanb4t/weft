@@ -341,49 +341,6 @@ func TestShedIntegrateSurfacesConflicts(t *testing.T) {
 	}
 }
 
-func TestShedIntegrateConflictsCarryBead(t *testing.T) {
-	r := &routeRunner{fn: func(name string, args []string) run.Result {
-		j := strings.Join(append([]string{name}, args...), " ")
-		switch {
-		case strings.Contains(j, "bd show weft-hjx.4.1"):
-			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
-		case strings.Contains(j, "bd show weft-hjx.4.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
-		case strings.Contains(j, "log -r conflicts()"):
-			return run.Result{Stdout: "chB\n", Code: 0} // chB is conflicted
-		default: // jj rebase
-			return run.Result{Code: 0}
-		}
-	}}
-	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.4.1", "weft-hjx.4.2", "--json")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	// Decode the envelope and assert on the conflicts[] field SPECIFICALLY. A
-	// substring check for {bead,change} is insufficient: stack[] also carries
-	// {bead,change} pairs, so it passes even when conflicts[] is still bare
-	// change-id strings. Unmarshalling conflicts[] into a {bead,change} struct
-	// fails outright on the pre-enrichment shape (string into struct), so this
-	// genuinely guards the enrichment.
-	var env struct {
-		Data struct {
-			Conflicts []struct {
-				Bead   string `json:"bead"`
-				Change string `json:"change"`
-			} `json:"conflicts"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(out.String()), &env); err != nil {
-		t.Fatalf("decode envelope (conflicts[] not [{bead,change}]?): %v; out=%q", err, out.String())
-	}
-	if len(env.Data.Conflicts) != 1 {
-		t.Fatalf("want 1 conflict, got %d: %q", len(env.Data.Conflicts), out.String())
-	}
-	if got := env.Data.Conflicts[0]; got.Bead != "weft-hjx.4.2" || got.Change != "chB" {
-		t.Errorf("conflicts[0] = %+v; want {bead:weft-hjx.4.2 change:chB}", got)
-	}
-}
-
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if strings.Contains(s, want) {
@@ -432,5 +389,74 @@ func TestShedIsolateWorkspaceAddFailureLeavesBeadInProgress(t *testing.T) {
 	updatedBeforeAdd = upd < add
 	if !updatedBeforeAdd {
 		t.Errorf("bead must be set in_progress before the workspace add attempt")
+	}
+}
+
+func TestShedIntegrateConflictsCarryBead(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.4.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-hjx.4.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chB"]}]`, Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			return run.Result{Stdout: "chB\n", Code: 0} // chB is conflicted
+		default: // jj rebase
+			return run.Result{Code: 0}
+		}
+	}}
+	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.4.1", "weft-hjx.4.2", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// Decode the envelope and assert on the conflicts[] field SPECIFICALLY. A
+	// substring check for {bead,change} is insufficient: stack[] also carries
+	// {bead,change} pairs, so it passes even when conflicts[] is still bare
+	// change-id strings. Unmarshalling conflicts[] into a {bead,change} struct
+	// fails outright on the pre-enrichment shape (string into struct), so this
+	// genuinely guards the enrichment.
+	var env struct {
+		Data struct {
+			Conflicts []struct {
+				Bead   string `json:"bead"`
+				Change string `json:"change"`
+			} `json:"conflicts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out.String()), &env); err != nil {
+		t.Fatalf("decode envelope (conflicts[] not [{bead,change}]?): %v; out=%q", err, out.String())
+	}
+	if len(env.Data.Conflicts) != 1 {
+		t.Fatalf("want 1 conflict, got %d: %q", len(env.Data.Conflicts), out.String())
+	}
+	if got := env.Data.Conflicts[0]; got.Bead != "weft-hjx.4.2" || got.Change != "chB" {
+		t.Errorf("conflicts[0] = %+v; want {bead:weft-hjx.4.2 change:chB}", got)
+	}
+}
+
+// TestShedIntegrateConflictUnknownChangeErrors verifies that if jj reports a
+// conflicted change-id that is NOT in the integration stack (and therefore cannot
+// be mapped to a bead), integrate returns a hard failure instead of silently
+// emitting bead:"" in the conflicts[] array. (F4)
+func TestShedIntegrateConflictUnknownChangeErrors(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-hjx.4.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:chA"]}]`, Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			// chZ is NOT in the integration stack (only chA is).
+			return run.Result{Stdout: "chZ\n", Code: 0}
+		default: // jj rebase
+			return run.Result{Code: 0}
+		}
+	}}
+	_, err := newTestCmd(r, "shed", "integrate", "weft-hjx.4.1", "--json")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("conflicted change not in stack should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "chZ") {
+		t.Errorf("error should name the unknown change-id, got %v", err)
 	}
 }

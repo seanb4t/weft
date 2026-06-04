@@ -215,14 +215,23 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			// Map each conflicted change-id back to its owning bead via the
 			// stack we just built, so the orchestrator can `conflict open <bead>`
 			// (seam 4 §3). paths/lowest_ancestor enrichment is deferred (§8).
+			// F6: conflicts[] uses [{bead,change}] — the actionable orchestrator-input
+			// form (each entry is directly consumable by `conflict open <bead>`),
+			// distinct from resume's observability []string form (see conflictChanges).
 			changeToBead := map[string]string{}
 			for _, e := range stack {
 				changeToBead[e["change"]] = e["bead"]
 			}
 			conflicts := []map[string]string{}
 			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+				// F4: guard against a conflicted change-id not in the integration stack.
+				// A missing key would silently produce bead:"" (misleading for orchestrators).
 				if ln = strings.TrimSpace(ln); ln != "" {
-					conflicts = append(conflicts, map[string]string{"bead": changeToBead[ln], "change": ln})
+					b, ok := changeToBead[ln]
+					if !ok {
+						return exit.Hardf("conflicted change %s is not in the integration stack — cannot map it to a bead", ln)
+					}
+					conflicts = append(conflicts, map[string]string{"bead": b, "change": ln})
 				}
 			}
 

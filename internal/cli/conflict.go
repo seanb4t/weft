@@ -34,6 +34,27 @@ func changeConflicted(r run.Runner, rev string) (bool, error) {
 	return strings.TrimSpace(res.Stdout) != "", nil
 }
 
+// scopedConflictChanges lists conflicted change-ids within the subtree rooted at
+// rootChange (the healed change + any descendants the squash rebased). Unlike
+// resume's repo-wide conflictChanges, finalize uses this as the orchestrator's
+// loop-termination gate, so it must not surface conflicts from unrelated epics.
+func scopedConflictChanges(r run.Runner, rootChange string) ([]string, error) {
+	res, err := run.JJ(r, "log", "-r", "conflicts() & descendants("+rootChange+")", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+	if err != nil {
+		return nil, exit.Hardf("jj scoped conflicts check could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("jj scoped conflicts check failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	out := []string{}
+	for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			out = append(out, ln)
+		}
+	}
+	return out, nil
+}
+
 func (a *App) newConflictOpenCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "open <bead>",
@@ -78,9 +99,10 @@ func (a *App) newConflictOpenCmd() *cobra.Command {
 				return exit.Hardf("jj config set failed: %s", strings.TrimSpace(res.Stderr))
 			}
 			data := map[string]any{"bead": bead, "change": change, "workspace": name, "path": path}
+			// F1: spec §5 prohibits `jj resolve` in agent context; use `jj st` instead.
 			text := fmt.Sprintf(
 				"opened resolution workspace %s for %s (change %s) at %s\n"+
-					"resolver: edit the conflict markers in that workspace (jj resolve --list to find them), remove them, then `weft conflict finalize %s`",
+					"resolver: edit the conflict markers in that workspace (run `jj st` to list the conflicted paths), remove them, then `weft conflict finalize %s`",
 				name, bead, change, path, bead)
 			return Emit(cmd, "conflict.open", data, text)
 		},
@@ -108,6 +130,13 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 			name := workspace.ResolveName(bead)
 			path := workspace.ResolvePath(root, a.Config.Workspace.Root, bead)
 			wsRev := name + "@" // jj addresses a workspace's working copy as <name>@
+
+			// F3: finalize requires a prior `conflict open` — the resolution workspace
+			// must exist on disk. Without this, changeConflicted(wsRev) fails with a
+			// cryptic jj error on an unknown <name>@ reference.
+			if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+				return exit.Invocationf("no resolution workspace for %s at %s — run `weft conflict open %s` first", bead, path, bead)
+			}
 
 			// Escalation gate (§6): the resolver must have removed the markers. If
 			// the resolution workspace's @ is still conflicted, do NOT squash —
@@ -153,6 +182,8 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 			}
 
 			// Reap the resolution workspace (seam 3 mechanics + path-safety guard).
+			// Defense-in-depth: ResolvePath always yields an in-root path, but guard
+			// against any future refactor that might produce an out-of-root path.
 			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
 			if !workspace.Contains(wtRoot, path) {
 				return exit.Hardf("refusing to reap %q: resolves outside worktrees root %s", name, wtRoot)
@@ -166,9 +197,10 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 				return exit.Hardf("rm resolution workspace %s: %v", path, err)
 			}
 
-			// Re-query conflicts() (jj ground truth): change is healed if it (and any
-			// descendants the squash simplified) are no longer conflicted.
-			remaining, err := conflictChanges(a.Runner)
+			// F2: Re-query conflicts() scoped to the change's subtree (not repo-wide).
+			// finalize uses remaining_conflicts as the orchestrator's loop-termination
+			// gate, so the repo-wide scope is a bug — use scopedConflictChanges instead.
+			remaining, err := scopedConflictChanges(a.Runner, change)
 			if err != nil {
 				return err
 			}
@@ -180,7 +212,8 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 			if !remainingSet[change] {
 				healed = append(healed, change)
 			}
-			data := map[string]any{"bead": bead, "change": change, "healed": healed, "remaining_conflicts": remaining}
+			// F5: emit escalated:false on the success path so both paths carry the key.
+			data := map[string]any{"bead": bead, "change": change, "escalated": false, "healed": healed, "remaining_conflicts": remaining}
 			text := fmt.Sprintf("finalized %s (change %s): %d healed, %d conflict(s) remaining",
 				bead, change, len(healed), len(remaining))
 			return Emit(cmd, "conflict.finalize", data, text)
