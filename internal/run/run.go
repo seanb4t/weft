@@ -56,8 +56,8 @@ func BD(r Runner, args ...string) (Result, error) {
 	return r.Run("bd", args...)
 }
 
-// GH runs the GitHub CLI. Used only by the finish verbs (push/PR/merge-state);
-// like bd/jj it is a deterministic CLI, not agent dispatch.
+// GH runs the GitHub CLI (introduced for the finish verbs: push/PR/merge-state).
+// Like bd/jj it is a deterministic CLI wrapper, not agent dispatch.
 func GH(r Runner, args ...string) (Result, error) {
 	return r.Run("gh", args...)
 }

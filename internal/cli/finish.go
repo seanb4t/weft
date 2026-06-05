@@ -7,6 +7,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,24 @@ import (
 	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
 )
+
+// epicIDPattern matches a bead id (the epic argument). Restricting to
+// [a-zA-Z0-9._-] excludes every jj-revset metacharacter (space, '&', '|', ':',
+// '@', '(', ')', '~') and the path separator '/', so the epic value is safe to
+// interpolate into both the mergeStyle revset (<epic>@origin) and the GitHub API
+// ref path (repos/{slug}/git/refs/heads/<epic>). Mirrors the revset-injection
+// guard idiom on changeIDPattern (conflict.go); see spec §7.
+var epicIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// validateEpicID rejects an epic argument that could alter a revset or walk the
+// GitHub API path, before any interpolation. Returns an invocation error
+// (exit 1) so a bad argument never reaches a subprocess.
+func validateEpicID(epic string) error {
+	if !epicIDPattern.MatchString(epic) {
+		return exit.Invocationf("invalid epic id %q — must match %s", epic, epicIDPattern)
+	}
+	return nil
+}
 
 // finishPick is one closed pick: its bead id, conventional-commit subject
 // (bead title), and woven jj change-id. The PR body is assembled from these
@@ -127,6 +146,9 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			epic := args[0]
+			if err := validateEpicID(epic); err != nil {
+				return err
+			}
 			picks, err := a.finishOpenPreflight(epic)
 			if err != nil {
 				return err
@@ -138,7 +160,7 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 				return err
 			}
 			title := fmt.Sprintf("%s (%s)", info.Title, epic)
-			body := assemblePRBody(epic, epic, picks)
+			body := assemblePRBody(epic, info.Title, picks)
 
 			if dryRun {
 				data := map[string]any{
@@ -161,13 +183,20 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 				return exit.Hardf("jj git push -b %s failed: %s", epic, strings.TrimSpace(res.Stderr))
 			}
 
-			// Idempotency (§4.3): if a PR already exists for the branch, re-push is
-			// done above; report the existing PR instead of opening a second.
-			if res, err := run.GH(a.Runner, "pr", "view", epic, "--json", "url"); err == nil && res.Code == 0 {
+			// Idempotency (§4.3): if an OPEN PR already exists for the branch,
+			// re-push is done above; report the existing PR instead of opening a
+			// second. A code==0 `gh pr view` with unparseable output is a hard
+			// error — never fall through to pr create, or a schema/output drift
+			// would silently open a duplicate PR.
+			if res, err := run.GH(a.Runner, "pr", "view", epic, "--json", "url,state"); err == nil && res.Code == 0 {
 				var existing struct {
-					URL string `json:"url"`
+					URL   string `json:"url"`
+					State string `json:"state"`
 				}
-				if json.Unmarshal([]byte(res.Stdout), &existing) == nil && existing.URL != "" {
+				if uerr := json.Unmarshal([]byte(res.Stdout), &existing); uerr != nil {
+					return exit.Hardf("parse gh pr view json: %v", uerr)
+				}
+				if existing.URL != "" && existing.State == "OPEN" {
 					data := map[string]any{
 						"epic": epic, "bookmark": epic, "pushed": true,
 						"pr_url": existing.URL, "pr_exists": true, "picks": picks, "dry_run": false,
@@ -209,30 +238,42 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 	return c
 }
 
-// prMerged reports whether the epic's PR is in the MERGED state (spec §6.1
-// safety gate — never abandon unmerged work; jj alone cannot distinguish a
-// squash-merge from a never-merged branch).
-func prMerged(r run.Runner, epic string) (bool, error) {
+// Merge styles returned by mergeStyle and switched on in reconcile. Named
+// constants keep the producer (mergeStyle) and consumer (reconcile switch) on a
+// single source of truth, so an unhandled value is a compile-visible gap rather
+// than a silent fall-through into the destructive abandon path.
+const (
+	mergeStyleMergeCommit    = "merge_commit"
+	mergeStyleSquashOrRebase = "squash_or_rebase"
+)
+
+// prState returns the epic PR's state ("MERGED", "OPEN", "CLOSED"). The
+// reconcile safety gate (spec §6.1) proceeds only on "MERGED" — never abandon
+// unmerged work; jj alone cannot distinguish a squash-merge from a never-merged
+// branch. Returning the raw state (not a bool) lets the caller name it in the
+// refusal message.
+func prState(r run.Runner, epic string) (string, error) {
 	res, err := run.GH(r, "pr", "view", epic, "--json", "state,mergeCommit")
 	if err != nil {
-		return false, exit.Hardf("gh pr view could not run: %v", err)
+		return "", exit.Hardf("gh pr view could not run: %v", err)
 	}
 	if res.Code != 0 {
-		return false, exit.Hardf("gh pr view %s failed: %s", epic, strings.TrimSpace(res.Stderr))
+		return "", exit.Hardf("gh pr view %s failed: %s", epic, strings.TrimSpace(res.Stderr))
 	}
 	var v struct {
 		State string `json:"state"`
 	}
 	if err := json.Unmarshal([]byte(res.Stdout), &v); err != nil {
-		return false, exit.Hardf("parse gh pr view json: %v", err)
+		return "", exit.Hardf("parse gh pr view json: %v", err)
 	}
-	return v.State == "MERGED", nil
+	return v.State, nil
 }
 
-// mergeStyle returns "merge_commit" if the epic's pushed tip (<epic>@origin) is
-// an ancestor of main@origin (a true-merge, reconcilable via rebase
-// --skip-emptied), or "squash_or_rebase" otherwise (content landed under a new
-// commit id — needs jj new main + jj abandon). Spec §6.1.3.
+// mergeStyle returns mergeStyleMergeCommit if the epic's pushed tip
+// (<epic>@origin) is an ancestor of main@origin (a true-merge, reconcilable via
+// rebase --skip-emptied), or mergeStyleSquashOrRebase otherwise (content landed
+// under a new commit id — needs jj new main + jj abandon). Spec §6.1 step 3.
+// The epic value is validated by validateEpicID before it reaches this revset.
 func mergeStyle(r run.Runner, epic string) (string, error) {
 	revset := epic + "@origin & ::main@origin"
 	res, err := run.JJ(r, "log", "-r", revset, "--no-graph", "-T", "commit_id")
@@ -243,16 +284,17 @@ func mergeStyle(r run.Runner, epic string) (string, error) {
 		return "", exit.Hardf("jj log (merge-style detect) failed: %s", strings.TrimSpace(res.Stderr))
 	}
 	if strings.TrimSpace(res.Stdout) != "" {
-		return "merge_commit", nil
+		return mergeStyleMergeCommit, nil
 	}
-	return "squash_or_rebase", nil
+	return mergeStyleSquashOrRebase, nil
 }
 
 // deleteRemoteBranch removes the epic's remote branch via the GitHub API.
 // gh pr merge --delete-branch is unreliable (PR #18 evidence), so reconcile
 // deletes the ref directly. Best-effort and idempotent: an already-absent
 // branch (or unresolvable slug) yields false, not an error. Returns whether a
-// branch was actually deleted (spec §6.1.4).
+// branch was actually deleted (spec §6.1 step 4). The epic value is validated
+// by validateEpicID before it reaches the ref path.
 func deleteRemoteBranch(r run.Runner, epic string) bool {
 	res, err := run.GH(r, "repo", "view", "--json", "nameWithOwner")
 	if err != nil || res.Code != 0 {
@@ -277,17 +319,25 @@ func (a *App) newFinishReconcileCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			epic := args[0]
-			merged, err := prMerged(a.Runner, epic)
+			if err := validateEpicID(epic); err != nil {
+				return err
+			}
+			state, err := prState(a.Runner, epic)
 			if err != nil {
 				return err
 			}
-			if !merged {
-				return exit.Invocationf("PR for %s is not merged — refusing to reconcile", epic)
+			if state != "MERGED" {
+				return exit.Invocationf("PR for %s is not merged (%s) — refusing to reconcile", epic, state)
 			}
-			if res, err := run.JJ(a.Runner, "git", "fetch"); err != nil {
-				return exit.Hardf("jj git fetch could not run: %v", err)
-			} else if res.Code != 0 {
-				return exit.Hardf("jj git fetch failed: %s", strings.TrimSpace(res.Stderr))
+			// jj git fetch updates remote-tracking refs (a local mutation), so it
+			// runs only in the real path — dry-run must mutate nothing (spec §6.1).
+			// Dry-run's mergeStyle therefore previews against current refs.
+			if !dryRun {
+				if res, err := run.JJ(a.Runner, "git", "fetch"); err != nil {
+					return exit.Hardf("jj git fetch could not run: %v", err)
+				} else if res.Code != 0 {
+					return exit.Hardf("jj git fetch failed: %s", strings.TrimSpace(res.Stderr))
+				}
 			}
 			style, err := mergeStyle(a.Runner, epic)
 			if err != nil {
@@ -304,13 +354,13 @@ func (a *App) newFinishReconcileCmd() *cobra.Command {
 					fmt.Sprintf("[dry-run] %s merged (%s) — would reconcile", epic, style))
 			}
 			switch style {
-			case "merge_commit":
+			case mergeStyleMergeCommit:
 				if res, err := run.JJ(a.Runner, "rebase", "-b", "@", "-o", "main", "--skip-emptied"); err != nil {
 					return exit.Hardf("jj rebase could not run: %v", err)
 				} else if res.Code != 0 {
 					return exit.Hardf("jj rebase failed: %s", strings.TrimSpace(res.Stderr))
 				}
-			default: // squash_or_rebase
+			case mergeStyleSquashOrRebase:
 				if res, err := run.JJ(a.Runner, "new", "main"); err != nil {
 					return exit.Hardf("jj new main could not run: %v", err)
 				} else if res.Code != 0 {
@@ -331,17 +381,19 @@ func (a *App) newFinishReconcileCmd() *cobra.Command {
 					}
 					abandoned = append(abandoned, root)
 				}
+			default:
+				return exit.Hardf("unknown merge style %q", style)
 			}
 			// Drop the local bookmark (idempotent backstop; the squash abandon may
-			// already have removed it — tolerate "no such bookmark"). Best-effort
-			// cleanup: the error is intentionally discarded (no errcheck linter
-			// configured, so an explicit discard rather than a //nolint directive).
-			_, _ = run.JJ(a.Runner, "bookmark", "delete", epic)
-			// Delete the remote branch if the merge left it behind (§6.1.4).
+			// already have removed it — a "no such bookmark" is expected). The
+			// envelope reports the actual outcome rather than assuming success.
+			delRes, delErr := run.JJ(a.Runner, "bookmark", "delete", epic)
+			bookmarkDeleted := delErr == nil && delRes.Code == 0
+			// Delete the remote branch if the merge left it behind (§6.1 step 4).
 			remoteDeleted := deleteRemoteBranch(a.Runner, epic)
 			data := map[string]any{
 				"epic": epic, "merged": true, "merge_style": style,
-				"abandoned": abandoned, "bookmark_deleted": true,
+				"abandoned": abandoned, "bookmark_deleted": bookmarkDeleted,
 				"remote_branch_deleted": remoteDeleted, "dry_run": false,
 			}
 			return Emit(cmd, "finish.reconcile", data,

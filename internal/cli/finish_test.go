@@ -286,6 +286,9 @@ func TestFinishReconcileRefusesUnmergedPR(t *testing.T) {
 	if got := exit.Code(err); got != 1 {
 		t.Fatalf("unmerged PR must be exit 1, got %d (err=%v)", got, err)
 	}
+	if err == nil || !strings.Contains(err.Error(), "(OPEN)") {
+		t.Errorf("refusal must name the PR state per spec §6.1: %v", err)
+	}
 	for _, c := range r.calls {
 		if strings.Contains(strings.Join(c, " "), "abandon") || strings.Contains(strings.Join(c, " "), "rebase") {
 			t.Errorf("must NOT touch jj topology when the PR is not merged: %v", c)
@@ -387,6 +390,9 @@ func TestFinishReconcileTrueMergeUsesRebase(t *testing.T) {
 	if !strings.Contains(out.String(), `"merge_style": "merge_commit"`) {
 		t.Errorf("envelope merge_style wrong: %q", out.String())
 	}
+	if !strings.Contains(out.String(), `"abandoned": []`) {
+		t.Errorf("true-merge path must serialize abandoned as an empty array (spec §10): %q", out.String())
+	}
 }
 
 func TestFinishReconcileDeletesStaleRemoteBranch(t *testing.T) {
@@ -425,11 +431,101 @@ func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
 	}
 	for _, c := range r.calls {
 		j := strings.Join(c, " ")
-		if strings.Contains(j, "new main") || strings.Contains(j, "abandon") || strings.Contains(j, "rebase") || strings.Contains(j, "bookmark delete") || strings.Contains(j, "api -X DELETE") {
+		if strings.Contains(j, "new main") || strings.Contains(j, "abandon") || strings.Contains(j, "rebase") || strings.Contains(j, "bookmark delete") || strings.Contains(j, "api -X DELETE") || strings.Contains(j, "git fetch") {
 			t.Errorf("dry-run must not mutate; saw %v", c)
 		}
 	}
 	if !strings.Contains(out.String(), `"dry_run": true`) {
 		t.Errorf("dry-run envelope missing dry_run:true: %q", out.String())
+	}
+}
+
+// --- input validation (epic id allowlist; revset/path injection guard) ---
+
+func TestFinishRejectsInjectionEpicID(t *testing.T) {
+	bad := []string{"weft-e & all()", "weft-e@origin", "a/b", "weft e", "weft-e:x"}
+	for _, epic := range bad {
+		for _, verb := range []string{"open", "reconcile"} {
+			r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 0} }}
+			_, err := newTestCmd(r, "finish", verb, epic)
+			if got := exit.Code(err); got != 1 {
+				t.Errorf("%s %q: want exit 1 (invalid epic), got %d (err=%v)", verb, epic, got, err)
+			}
+			if len(r.calls) != 0 {
+				t.Errorf("%s %q: no subprocess may run before epic validation; saw %v", verb, epic, r.calls)
+			}
+		}
+	}
+}
+
+// --- PR body uses the epic TITLE, not the id (regression: assemblePRBody arg) ---
+
+func TestFinishOpenBodyUsesEpicTitle(t *testing.T) {
+	r := finishPreflightRunner(nil)
+	// Non-JSON dry-run emits the assembled body in the human text.
+	out, err := newTestCmd(r, "finish", "open", "weft-e", "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if !strings.Contains(out.String(), "woven for weft-e — Epic E") {
+		t.Errorf("PR body summary must use the epic title, not the id: %q", out.String())
+	}
+}
+
+// --- closedPicks error surfacing (runner error + non-zero exit) ---
+
+func TestClosedPicksSurfacesRunnerError(t *testing.T) {
+	if _, err := closedPicks(errRunner{}, "weft-e"); exit.Code(err) != 2 {
+		t.Errorf("runner error must be hard (exit 2), got %v", err)
+	}
+}
+
+func TestClosedPicksSurfacesNonZeroExit(t *testing.T) {
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 1, Stderr: "nope"} }}
+	if _, err := closedPicks(r, "weft-e"); exit.Code(err) != 2 {
+		t.Errorf("non-zero bd exit must be hard (exit 2), got %v", err)
+	}
+}
+
+// --- prState surfaces a malformed gh pr view payload ---
+
+func TestPrStateSurfacesParseFailure(t *testing.T) {
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Stdout: "not json", Code: 0} }}
+	if _, err := prState(r, "weft-e"); exit.Code(err) != 2 {
+		t.Errorf("malformed gh pr view must be hard (exit 2), got %v", err)
+	}
+}
+
+// --- mergeStyle surfaces a non-zero jj log exit ---
+
+func TestMergeStyleSurfacesNonZeroExit(t *testing.T) {
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 1, Stderr: "bad revset"} }}
+	if _, err := mergeStyle(r, "weft-e"); exit.Code(err) != 2 {
+		t.Errorf("non-zero jj log exit must be hard (exit 2), got %v", err)
+	}
+}
+
+// --- deleteRemoteBranch best-effort idempotency (already-absent / unresolvable) ---
+
+func TestDeleteRemoteBranchAbsentReturnsFalse(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "repo view") {
+			return run.Result{Stdout: `{"nameWithOwner":"o/r"}`, Code: 0}
+		}
+		if strings.Contains(j, "api -X DELETE") {
+			return run.Result{Code: 1, Stderr: "HTTP 404: Not Found"} // already gone
+		}
+		return run.Result{Code: 0}
+	}}
+	if deleteRemoteBranch(r, "weft-e") {
+		t.Error("an already-absent remote branch (404) must yield false, not a deletion")
+	}
+}
+
+func TestDeleteRemoteBranchUnresolvableSlugReturnsFalse(t *testing.T) {
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 1} }} // repo view fails
+	if deleteRemoteBranch(r, "weft-e") {
+		t.Error("an unresolvable repo slug must yield false")
 	}
 }
