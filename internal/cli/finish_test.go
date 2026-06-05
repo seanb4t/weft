@@ -289,3 +289,91 @@ func TestMergeStyleDetectsTrueMergeVsSquash(t *testing.T) {
 		t.Errorf("ancestor absent → squash_or_rebase; got %q err=%v", got, err)
 	}
 }
+
+// mergedReconcileRunner: PR merged; merge-style is controlled by `ancestor`.
+func mergedReconcileRunner(ancestor bool, extra func(j string) (run.Result, bool)) *routeRunner {
+	return &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if extra != nil {
+			if res, ok := extra(j); ok {
+				return res
+			}
+		}
+		switch {
+		case strings.Contains(j, "pr view weft-e"):
+			return run.Result{Stdout: `{"state":"MERGED","mergeCommit":{"oid":"abc"}}`, Code: 0}
+		case strings.Contains(j, "weft-e@origin & ::main@origin"):
+			if ancestor {
+				return run.Result{Stdout: "deadbeef\n", Code: 0}
+			}
+			return run.Result{Stdout: "", Code: 0}
+		case strings.Contains(j, "roots(trunk()..@)"):
+			return run.Result{Stdout: "rootchg\n", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+}
+
+func TestFinishReconcileSquashUsesNewAndAbandon(t *testing.T) {
+	r := mergedReconcileRunner(false, nil)
+	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var sawNew, sawAbandon, sawRebase bool
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		sawNew = sawNew || strings.Contains(j, "new main")
+		sawAbandon = sawAbandon || strings.Contains(j, "abandon")
+		sawRebase = sawRebase || strings.Contains(j, "rebase")
+	}
+	if !sawNew || !sawAbandon {
+		t.Errorf("squash path must use jj new main + abandon; new=%v abandon=%v", sawNew, sawAbandon)
+	}
+	if sawRebase {
+		t.Errorf("squash path must NOT rebase: %v", r.calls)
+	}
+	if !strings.Contains(out.String(), `"merge_style": "squash_or_rebase"`) {
+		t.Errorf("envelope merge_style wrong: %q", out.String())
+	}
+}
+
+func TestFinishReconcileTrueMergeUsesRebase(t *testing.T) {
+	r := mergedReconcileRunner(true, nil)
+	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var sawRebase, sawAbandon bool
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		sawRebase = sawRebase || strings.Contains(j, "rebase -b @ -o main")
+		sawAbandon = sawAbandon || strings.Contains(j, "abandon")
+	}
+	if !sawRebase {
+		t.Errorf("true-merge path must rebase --skip-emptied: %v", r.calls)
+	}
+	if sawAbandon {
+		t.Errorf("true-merge path must NOT abandon: %v", r.calls)
+	}
+	if !strings.Contains(out.String(), `"merge_style": "merge_commit"`) {
+		t.Errorf("envelope merge_style wrong: %q", out.String())
+	}
+}
+
+func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
+	r := mergedReconcileRunner(false, nil)
+	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "new main") || strings.Contains(j, "abandon") || strings.Contains(j, "rebase") || strings.Contains(j, "bookmark delete") {
+			t.Errorf("dry-run must not mutate; saw %v", c)
+		}
+	}
+	if !strings.Contains(out.String(), `"dry_run": true`) {
+		t.Errorf("dry-run envelope missing dry_run:true: %q", out.String())
+	}
+}

@@ -243,6 +243,7 @@ func mergeStyle(r run.Runner, epic string) (string, error) {
 }
 
 func (a *App) newFinishReconcileCmd() *cobra.Command {
+	var dryRun bool
 	c := &cobra.Command{
 		Use:   "reconcile <epic>",
 		Short: "Reconcile local jj state after the epic's PR merges",
@@ -256,8 +257,68 @@ func (a *App) newFinishReconcileCmd() *cobra.Command {
 			if !merged {
 				return exit.Invocationf("PR for %s is not merged — refusing to reconcile", epic)
 			}
-			return exit.Hardf("finish reconcile execution not yet implemented") // Task 6
+			if res, err := run.JJ(a.Runner, "git", "fetch"); err != nil {
+				return exit.Hardf("jj git fetch could not run: %v", err)
+			} else if res.Code != 0 {
+				return exit.Hardf("jj git fetch failed: %s", strings.TrimSpace(res.Stderr))
+			}
+			style, err := mergeStyle(a.Runner, epic)
+			if err != nil {
+				return err
+			}
+			abandoned := []string{}
+			if dryRun {
+				data := map[string]any{
+					"epic": epic, "merged": true, "merge_style": style,
+					"abandoned": abandoned, "bookmark_deleted": false,
+					"remote_branch_deleted": false, "dry_run": true,
+				}
+				return Emit(cmd, "finish.reconcile", data,
+					fmt.Sprintf("[dry-run] %s merged (%s) — would reconcile", epic, style))
+			}
+			switch style {
+			case "merge_commit":
+				if res, err := run.JJ(a.Runner, "rebase", "-b", "@", "-o", "main", "--skip-emptied"); err != nil {
+					return exit.Hardf("jj rebase could not run: %v", err)
+				} else if res.Code != 0 {
+					return exit.Hardf("jj rebase failed: %s", strings.TrimSpace(res.Stderr))
+				}
+			default: // squash_or_rebase
+				if res, err := run.JJ(a.Runner, "new", "main"); err != nil {
+					return exit.Hardf("jj new main could not run: %v", err)
+				} else if res.Code != 0 {
+					return exit.Hardf("jj new main failed: %s", strings.TrimSpace(res.Stderr))
+				}
+				rootRes, err := run.JJ(a.Runner, "log", "-r", "roots(trunk()..@)", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+				if err != nil {
+					return exit.Hardf("jj log roots could not run: %v", err)
+				}
+				if rootRes.Code != 0 {
+					return exit.Hardf("jj log roots failed: %s", strings.TrimSpace(rootRes.Stderr))
+				}
+				for _, root := range splitTrimLines(rootRes.Stdout) {
+					if res, err := run.JJ(a.Runner, "abandon", root+"::"); err != nil {
+						return exit.Hardf("jj abandon could not run: %v", err)
+					} else if res.Code != 0 {
+						return exit.Hardf("jj abandon %s:: failed: %s", root, strings.TrimSpace(res.Stderr))
+					}
+					abandoned = append(abandoned, root)
+				}
+			}
+			// Drop the local bookmark (idempotent backstop; the squash abandon may
+			// already have removed it — tolerate "no such bookmark"). Best-effort
+			// cleanup: the error is intentionally discarded (no errcheck linter
+			// configured, so an explicit discard rather than a //nolint directive).
+			_, _ = run.JJ(a.Runner, "bookmark", "delete", epic)
+			data := map[string]any{
+				"epic": epic, "merged": true, "merge_style": style,
+				"abandoned": abandoned, "bookmark_deleted": true,
+				"remote_branch_deleted": false, "dry_run": false,
+			}
+			return Emit(cmd, "finish.reconcile", data,
+				fmt.Sprintf("reconciled %s (%s): %d abandoned", epic, style, len(abandoned)))
 		},
 	}
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "detect the merge style and emit the plan without mutating")
 	return c
 }
