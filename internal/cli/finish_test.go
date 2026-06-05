@@ -91,6 +91,8 @@ func finishPreflightRunner(over func(j string) (run.Result, bool)) *routeRunner 
 			return run.Result{Code: 0}
 		case strings.Contains(j, "bd list --parent weft-e --status closed"):
 			return run.Result{Stdout: `[{"id":"weft-e.1","title":"feat: A","labels":["jj-change:cha"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e"):
+			return run.Result{Stdout: `[{"title":"Epic E","status":"open","labels":[]}]`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -213,6 +215,32 @@ func TestFinishOpenPushesAndCreatesPR(t *testing.T) {
 	}
 	if len(env.Data.Picks) != 1 || env.Data.Picks[0].Change != "cha" {
 		t.Errorf("picks = %+v", env.Data.Picks)
+	}
+}
+
+func TestFinishOpenTitleFromEpicTitle(t *testing.T) {
+	r := finishPreflightRunner(func(j string) (run.Result, bool) {
+		if strings.Contains(j, "pr view weft-e") {
+			return run.Result{Code: 1, Stderr: "no pull requests found"}, true // no existing PR
+		}
+		if strings.Contains(j, "pr create") {
+			return run.Result{Stdout: "https://github.com/o/r/pull/9\n", Code: 0}, true
+		}
+		return run.Result{}, false
+	})
+	if _, err := newTestCmd(r, "finish", "open", "weft-e", "--json"); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	var title string
+	for _, c := range r.calls {
+		for i, a := range c {
+			if a == "--title" && i+1 < len(c) {
+				title = c[i+1]
+			}
+		}
+	}
+	if title != "Epic E (weft-e)" {
+		t.Errorf("PR title = %q, want %q (epic-title (epic-id), spec §4.2)", title, "Epic E (weft-e)")
 	}
 }
 

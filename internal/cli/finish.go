@@ -131,7 +131,13 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			title := fmt.Sprintf("%s (%s)", epic, epic) // title enrichment deferred to weft-hjx.9.7
+			// PR title is "<epic-title> (<epic-id>)" (spec §4.2) — read the epic
+			// title via bd show; the epic arg is the id.
+			info, err := showBead(a.Runner, epic)
+			if err != nil {
+				return err
+			}
+			title := fmt.Sprintf("%s (%s)", info.Title, epic)
 			body := assemblePRBody(epic, epic, picks)
 
 			if dryRun {
