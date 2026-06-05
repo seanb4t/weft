@@ -5,8 +5,10 @@
 package cli
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
 )
 
@@ -20,6 +22,26 @@ func TestShowBeadParsesFields(t *testing.T) {
 	}
 	if info.Title != "T" || info.Status != "in_progress" {
 		t.Errorf("fields = %+v", info)
+	}
+}
+
+// fp0.13: showBead Hardf branch when bd show returns a non-zero exit.
+func TestShowBeadHardfOnBdError(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		return run.Result{Code: 1, Stderr: "bd: internal error"}
+	}}
+	_, err := showBead(r, "weft-hjx.1.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("non-zero bd show must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: showBead Hardf branch when the runner itself fails to start.
+func TestShowBeadHardfOnRunnerError(t *testing.T) {
+	r := &routeRunner{errFn: func(string, []string) error { return fmt.Errorf("exec: bd not found") }}
+	_, err := showBead(r, "weft-hjx.1.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("runner error on bd show must be exit 2 (Hardf), got %d (err=%v)", got, err)
 	}
 }
 

@@ -23,6 +23,11 @@ func (a *App) newResumeCmd() *cobra.Command {
 			if epic == "" {
 				return exit.Invocationf("--epic is required")
 			}
+			// Output key aliases: the bd status values are mapped to more descriptive
+			// output keys — "closed" → "landed", "in_progress" → "in_flight".
+			// These aliases are intentional: "landed" matches the spec §4.5 vocabulary
+			// and "in_flight" avoids the internal bd status name leaking into the
+			// public command surface. The mapping is load-bearing for prompt consumers.
 			landed, err := beadIDsByStatus(a.Runner, epic, "closed")
 			if err != nil {
 				return err
@@ -102,13 +107,7 @@ func conflictChanges(r run.Runner) ([]string, error) {
 	if res.Code != 0 {
 		return nil, exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
 	}
-	out := []string{}
-	for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-		if ln = strings.TrimSpace(ln); ln != "" {
-			out = append(out, ln)
-		}
-	}
-	return out, nil
+	return splitTrimLines(res.Stdout), nil
 }
 
 // idsFromJSON parses a bd issue-array JSON and returns the ids.

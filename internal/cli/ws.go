@@ -33,12 +33,7 @@ func (a *App) newWsListCmd() *cobra.Command {
 			if res.Code != 0 {
 				return exit.Hardf("jj workspace list failed: %s", strings.TrimSpace(res.Stderr))
 			}
-			names := []string{} // non-nil so empty output serializes as [] not null
-			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-				if ln = strings.TrimSpace(ln); ln != "" {
-					names = append(names, ln)
-				}
-			}
+			names := splitTrimLines(res.Stdout)
 			data := map[string]any{"workspaces": names}
 			return Emit(cmd, "ws.list", data, fmt.Sprintf("workspaces: %s", strings.Join(names, " ")))
 		},

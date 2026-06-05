@@ -109,13 +109,24 @@ func TestShedFormMaxDefaultsFromConfig(t *testing.T) {
 
 // routeRunner is a recording fake that dispatches each call through fn, so a
 // test can return different results per command and assert call ordering.
+//
+// Optional errFn: when non-nil, it is called first; if it returns a non-nil
+// error the Run method records the call and returns (run.Result{}, err)
+// without invoking fn. This allows targeted error-injection in tests without
+// affecting existing tests (errFn is nil by default).
 type routeRunner struct {
 	fn    func(name string, args []string) run.Result
+	errFn func(name string, args []string) error
 	calls [][]string
 }
 
 func (r *routeRunner) Run(name string, args ...string) (run.Result, error) {
 	r.calls = append(r.calls, append([]string{name}, args...))
+	if r.errFn != nil {
+		if err := r.errFn(name, args); err != nil {
+			return run.Result{}, err
+		}
+	}
 	return r.fn(name, args), nil
 }
 

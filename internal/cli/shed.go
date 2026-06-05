@@ -200,11 +200,7 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			// First-class conflicts are surfaced as data; resolution is seam 4.
 			// The revset is stack-scoped: only report conflicts that belong to this
 			// wave's members, not any pre-existing conflicts elsewhere in the repo.
-			stackRevs := make([]string, 0, len(changes))
-			for _, ch := range changes {
-				stackRevs = append(stackRevs, ch)
-			}
-			scopedRevset := "conflicts() & (" + strings.Join(stackRevs, " | ") + ")"
+			scopedRevset := "conflicts() & (" + strings.Join(changes, " | ") + ")"
 			res, err := run.JJ(a.Runner, "log", "-r", scopedRevset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 			if err != nil {
 				return exit.Hardf("jj log conflicts() could not run: %v", err)
@@ -223,25 +219,23 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				changeToBead[e["change"]] = e["bead"]
 			}
 			conflicts := []map[string]string{}
-			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+			for _, ln := range splitTrimLines(res.Stdout) {
 				// F4: guard against a conflicted change-id not in the integration stack.
 				// A missing key would silently produce bead:"" (misleading for orchestrators).
-				if ln = strings.TrimSpace(ln); ln != "" {
-					b, ok := changeToBead[ln]
-					if !ok {
-						return exit.Hardf("conflicted change %s is not in the integration stack — cannot map it to a bead", ln)
-					}
-					conflicts = append(conflicts, map[string]string{"bead": b, "change": ln})
+				b, ok := changeToBead[ln]
+				if !ok {
+					return exit.Hardf("conflicted change %s is not in the integration stack — cannot map it to a bead", ln)
 				}
+				conflicts = append(conflicts, map[string]string{"bead": b, "change": ln})
 			}
 
-			// Build human-readable stack summary (change-ids in order).
-			changeIDs := make([]string, 0, len(stack))
-			for _, e := range stack {
-				changeIDs = append(changeIDs, e["change"])
-			}
+			// NOTE (seam-4 envelope deferred): conflicts[] is emitted inside data{} here,
+			// not as a top-level envelope field. The decision on whether conflicts belongs
+			// at the top-level envelope (parity with the resume note in conflictChanges)
+			// is tracked as a deferred seam-4 envelope decision (weft-hjx.6).
 			data := map[string]any{"stack": stack, "conflicts": conflicts}
-			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changeIDs, " -> "))
+			// changes[i] == stack[i]["change"] by construction; reuse directly.
+			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changes, " -> "))
 			if len(conflicts) > 0 {
 				ids := make([]string, 0, len(conflicts))
 				for _, c := range conflicts {

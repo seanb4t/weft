@@ -36,9 +36,8 @@ func (a *App) newReapCmd() *cobra.Command {
 			}
 			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
 			reaped := []string{}
-			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-				name := strings.TrimSpace(ln)
-				if name == "" || name == "default" {
+			for _, name := range splitTrimLines(res.Stdout) {
+				if name == "default" {
 					continue // never reap the orchestrator's own workspace
 				}
 				bead, _ := workspace.Resolve(name) // kind-aware: strips -resolve, desanitizes

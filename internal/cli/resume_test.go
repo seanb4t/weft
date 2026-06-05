@@ -5,11 +5,114 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
 )
+
+// fp0.15: resume without --epic must be exit 1 (Invocation error).
+func TestResumeRequiresEpic(t *testing.T) {
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 0} }}
+	_, err := newTestCmd(r, "resume")
+	if got := exit.Code(err); got != 1 {
+		t.Fatalf("missing --epic must be exit 1, got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: beadIDsByStatus Hardf branch when bd list fails.
+func TestBeadIDsByStatusHardfOnBdError(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "bd" {
+			return run.Result{Code: 1, Stderr: "bd: list failed"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := beadIDsByStatus(r, "weft-hjx.1", "closed")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("bd list failure must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: beadIDsByStatus Hardf branch when runner itself fails to start.
+func TestBeadIDsByStatusHardfOnRunnerError(t *testing.T) {
+	r := &routeRunner{errFn: func(string, []string) error { return fmt.Errorf("bd not found") }}
+	_, err := beadIDsByStatus(r, "weft-hjx.1", "closed")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("runner error on bd list must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: readyIDs Hardf branch when bd ready fails.
+func TestReadyIDsHardfOnBdError(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "bd" {
+			return run.Result{Code: 1, Stderr: "bd: ready failed"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := readyIDs(r, "weft-hjx.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("bd ready failure must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: readyIDs Hardf branch when runner fails to start.
+func TestReadyIDsHardfOnRunnerError(t *testing.T) {
+	r := &routeRunner{errFn: func(string, []string) error { return fmt.Errorf("bd not found") }}
+	_, err := readyIDs(r, "weft-hjx.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("runner error on bd ready must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: conflictChanges Hardf branch when jj log fails.
+func TestConflictChangesHardfOnJJError(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "jj" {
+			return run.Result{Code: 1, Stderr: "jj: revset error"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := conflictChanges(r)
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("jj log failure must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.13: conflictChanges Hardf branch when runner fails to start.
+func TestConflictChangesHardfOnRunnerError(t *testing.T) {
+	r := &routeRunner{errFn: func(string, []string) error { return fmt.Errorf("jj not found") }}
+	_, err := conflictChanges(r)
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("runner error on jj log conflicts() must be exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+}
+
+// fp0.15: resume halts and returns Hardf when a mid-pipeline subprocess fails.
+func TestResumeMidPipelineErrorHalts(t *testing.T) {
+	// Fail the bd list (beadIDsByStatus for "closed") — resume must exit 2 and
+	// must not proceed to later subprocess calls (readyIDs, conflictChanges, etc.).
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "bd list") && strings.Contains(j, "closed") {
+			return run.Result{Code: 1, Stderr: "bd: db unavailable"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := newTestCmd(r, "resume", "--epic", "weft-hjx.1")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("mid-pipeline bd error must propagate as exit 2 (Hardf), got %d (err=%v)", got, err)
+	}
+	// Must not have called jj (conflicts check) — pipeline halted.
+	for _, c := range r.calls {
+		if c[0] == "jj" && strings.Contains(strings.Join(c, " "), "conflicts()") {
+			t.Errorf("resume must halt on mid-pipeline error, but still called jj conflicts(): %v", c)
+		}
+	}
+}
 
 func TestResumeProjectsState(t *testing.T) {
 	r := &routeRunner{fn: func(name string, args []string) run.Result {

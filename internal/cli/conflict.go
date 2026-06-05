@@ -64,13 +64,7 @@ func scopedConflictChanges(r run.Runner, rootChange string) ([]string, error) {
 	if res.Code != 0 {
 		return nil, exit.Hardf("jj scoped conflicts check failed: %s", strings.TrimSpace(res.Stderr))
 	}
-	out := []string{}
-	for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-		if ln = strings.TrimSpace(ln); ln != "" {
-			out = append(out, ln)
-		}
-	}
-	return out, nil
+	return splitTrimLines(res.Stdout), nil
 }
 
 func (a *App) newConflictOpenCmd() *cobra.Command {
