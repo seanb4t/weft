@@ -203,13 +203,60 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 	return c
 }
 
+// prMerged reports whether the epic's PR is in the MERGED state (spec §6.1
+// safety gate — never abandon unmerged work; jj alone cannot distinguish a
+// squash-merge from a never-merged branch).
+func prMerged(r run.Runner, epic string) (bool, error) {
+	res, err := run.GH(r, "pr", "view", epic, "--json", "state,mergeCommit")
+	if err != nil {
+		return false, exit.Hardf("gh pr view could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return false, exit.Hardf("gh pr view %s failed: %s", epic, strings.TrimSpace(res.Stderr))
+	}
+	var v struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &v); err != nil {
+		return false, exit.Hardf("parse gh pr view json: %v", err)
+	}
+	return v.State == "MERGED", nil
+}
+
+// mergeStyle returns "merge_commit" if the epic's pushed tip (<epic>@origin) is
+// an ancestor of main@origin (a true-merge, reconcilable via rebase
+// --skip-emptied), or "squash_or_rebase" otherwise (content landed under a new
+// commit id — needs jj new main + jj abandon). Spec §6.1.3.
+func mergeStyle(r run.Runner, epic string) (string, error) {
+	revset := epic + "@origin & ::main@origin"
+	res, err := run.JJ(r, "log", "-r", revset, "--no-graph", "-T", "commit_id")
+	if err != nil {
+		return "", exit.Hardf("jj log (merge-style detect) could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return "", exit.Hardf("jj log (merge-style detect) failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	if strings.TrimSpace(res.Stdout) != "" {
+		return "merge_commit", nil
+	}
+	return "squash_or_rebase", nil
+}
+
 func (a *App) newFinishReconcileCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "reconcile <epic>",
 		Short: "Reconcile local jj state after the epic's PR merges",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return exit.Hardf("finish reconcile not yet implemented") // replaced in Tasks 5–6
+			epic := args[0]
+			merged, err := prMerged(a.Runner, epic)
+			if err != nil {
+				return err
+			}
+			if !merged {
+				return exit.Invocationf("PR for %s is not merged — refusing to reconcile", epic)
+			}
+			return exit.Hardf("finish reconcile execution not yet implemented") // Task 6
 		},
 	}
 	return c

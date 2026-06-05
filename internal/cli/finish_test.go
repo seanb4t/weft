@@ -245,3 +245,47 @@ func TestFinishOpenDryRunPicksSerializeAsArray(t *testing.T) {
 		t.Errorf("picks must serialize as a JSON array: %q", out.String())
 	}
 }
+
+func TestFinishReconcileRefusesUnmergedPR(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "pr view weft-e") {
+			return run.Result{Stdout: `{"state":"OPEN","mergeCommit":null}`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := newTestCmd(r, "finish", "reconcile", "weft-e")
+	if got := exit.Code(err); got != 1 {
+		t.Fatalf("unmerged PR must be exit 1, got %d (err=%v)", got, err)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "abandon") || strings.Contains(strings.Join(c, " "), "rebase") {
+			t.Errorf("must NOT touch jj topology when the PR is not merged: %v", c)
+		}
+	}
+}
+
+func TestMergeStyleDetectsTrueMergeVsSquash(t *testing.T) {
+	// Ancestor present → merge_commit.
+	rMerge := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "weft-e@origin & ::main@origin") {
+			return run.Result{Stdout: "deadbeef\n", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got, err := mergeStyle(rMerge, "weft-e"); err != nil || got != "merge_commit" {
+		t.Errorf("ancestor present → merge_commit; got %q err=%v", got, err)
+	}
+	// Ancestor absent → squash_or_rebase.
+	rSquash := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "weft-e@origin & ::main@origin") {
+			return run.Result{Stdout: "", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got, err := mergeStyle(rSquash, "weft-e"); err != nil || got != "squash_or_rebase" {
+		t.Errorf("ancestor absent → squash_or_rebase; got %q err=%v", got, err)
+	}
+}
