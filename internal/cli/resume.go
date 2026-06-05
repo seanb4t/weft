@@ -44,7 +44,7 @@ func (a *App) newResumeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			conflicts, err := conflictChanges(a.Runner)
+			conflicts, err := conflictChanges(a.Runner, epic)
 			if err != nil {
 				return err
 			}
@@ -85,29 +85,78 @@ func readyIDs(r run.Runner, epic string) ([]string, error) {
 	return idsFromJSON(res.Stdout)
 }
 
-// conflictChanges lists the change-ids of conflicted commits in the stack.
+// conflictChanges lists the change-ids of conflicted commits in this epic's
+// stack. It derives the epic's sealed beads' jj-change ids (those carrying a
+// jj-change:<id> label) and intersects: conflicts() & (ch1 | ch2 | ...).
 //
-// NOTE (v1 limitation, tracked by weft-hjx.6): this uses a bare repo-wide
-// conflicts() revset, which can over-report in a multi-workspace/multi-epic
-// repo (it surfaces conflicts that may not belong to the resumed epic). Unlike
-// pick land / shed integrate — whose verdicts GATE behavior and therefore scope
-// as `conflicts() & <change>` — resume is read-only observability, so the cost
-// is a display inaccuracy, not a wrong verdict. weft-hjx.6 tracks scoping this
-// to the epic's stack (intersect with the epic beads' jj-change ids).
+// Empty-changes short-circuit: when no bead is sealed yet there is nothing in
+// this epic that can be conflicted, so the function returns [] immediately
+// without building an invalid `conflicts() & ()` revset.
+//
+// Injection guard: each change-id is validated against changeIDPattern before
+// interpolation into the revset string (same rationale as conflict.go's
+// changeConflicted — a tampered jj-change label could otherwise alter revset
+// evaluation). changeIDPattern is defined in conflict.go (same package).
 //
 // F6 (schema note): resume emits conflicts as bare change-ids ([]string) for
 // observability; the actionable [{bead,change}] form is shed integrate's (which
 // can map each conflicted change to its owning bead via the wave stack, enabling
 // the orchestrator to directly call `conflict open <bead>`).
-func conflictChanges(r run.Runner) ([]string, error) {
-	res, err := run.JJ(r, "log", "-r", "conflicts()", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+func conflictChanges(r run.Runner, epic string) ([]string, error) {
+	changes, err := epicChanges(r, epic)
 	if err != nil {
-		return nil, exit.Hardf("jj log conflicts() could not run: %v", err)
+		return nil, err
+	}
+	if len(changes) == 0 {
+		// No sealed beads → nothing in this epic can be conflicted. Return empty
+		// WITHOUT building an invalid `conflicts() & ()` revset.
+		return []string{}, nil
+	}
+	// Allowlist-validate each change-id before interpolation (revset-injection
+	// guard; same rationale as conflict.go changeConflicted — a tampered
+	// jj-change label could otherwise alter revset evaluation). changeIDPattern
+	// is defined in conflict.go (same package).
+	for _, ch := range changes {
+		if !changeIDPattern.MatchString(ch) {
+			return nil, exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", ch)
+		}
+	}
+	revset := "conflicts() & (" + strings.Join(changes, " | ") + ")"
+	res, err := run.JJ(r, "log", "-r", revset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+	if err != nil {
+		return nil, exit.Hardf("jj log scoped conflicts() %q could not run: %v", revset, err)
 	}
 	if res.Code != 0 {
-		return nil, exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
+		return nil, exit.Hardf("jj log scoped conflicts() %q failed: %s", revset, strings.TrimSpace(res.Stderr))
 	}
 	return splitTrimLines(res.Stdout), nil
+}
+
+// epicChanges returns the jj-change ids of the epic's sealed beads (those
+// carrying a jj-change:<id> label), used to scope conflicts() to this epic's
+// stack rather than the whole repo. Returns a non-nil empty slice when no
+// bead is sealed yet.
+func epicChanges(r run.Runner, epic string) ([]string, error) {
+	res, err := run.BD(r, "list", "--parent", epic, "--json")
+	if err != nil {
+		return nil, exit.Hardf("bd list could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("bd list failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	var arr []struct {
+		Labels []string `json:"labels"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
+		return nil, exit.Hardf("parse bd json: %v", err)
+	}
+	changes := []string{}
+	for _, b := range arr {
+		if ch := changeFromLabels(b.Labels); ch != "" {
+			changes = append(changes, ch)
+		}
+	}
+	return changes, nil
 }
 
 // idsFromJSON parses a bd issue-array JSON and returns the ids.

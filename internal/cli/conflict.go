@@ -50,9 +50,10 @@ func changeConflicted(r run.Runner, rev string) (bool, error) {
 }
 
 // scopedConflictChanges lists conflicted change-ids within the subtree rooted at
-// rootChange (the healed change + any descendants the squash rebased). Unlike
-// resume's repo-wide conflictChanges, finalize uses this as the orchestrator's
-// loop-termination gate, so it must not surface conflicts from unrelated epics.
+// rootChange (the healed change + any descendants the squash rebased). finalize
+// uses this as the orchestrator's loop-termination gate, so it scopes by subtree
+// (descendants) rather than resume's explicit epic-stack union — both avoid
+// surfacing conflicts from unrelated epics.
 func scopedConflictChanges(r run.Runner, rootChange string) ([]string, error) {
 	if !changeIDPattern.MatchString(rootChange) {
 		return nil, exit.Hardf("refusing to interpolate unsafe revision %q into a revset", rootChange)
