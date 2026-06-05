@@ -180,6 +180,21 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				changes = append(changes, ch)
 			}
 
+			// Allowlist-validate every change-id before it is interpolated into a
+			// jj revset. Both the per-member `rebase -s <ch>` below and the scoped
+			// conflicts() revset further down take change-ids straight from the
+			// bead's jj-change:<id> label; a tampered label could otherwise inject
+			// revset metacharacters and silently alter evaluation (no OS-shell
+			// injection — exec is arg-sliced). Same guard the sibling
+			// revset-builders apply (conflict.go changeConflicted /
+			// scopedConflictChanges, resume.go conflictChanges); changeIDPattern is
+			// defined in conflict.go (same package).
+			for _, ch := range changes {
+				if !changeIDPattern.MatchString(ch) {
+					return exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", ch)
+				}
+			}
+
 			// Rebase into a linear stack: trunk() <- beads[0] <- beads[1] <- ...
 			//
 			// NOTE: --skip-emptied is intentionally omitted here, diverging from
