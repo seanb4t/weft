@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
@@ -30,6 +31,11 @@ func (a *App) newPickVerifyCmd() *cobra.Command {
 			if gate == "" {
 				return exit.Invocationf("no verify gate configured ([verify].command in .weft/config.toml)")
 			}
+			// SECURITY: gate is operator-supplied config executed via `sh -c`. This is
+			// a trusted-config boundary, NOT a sandbox — arbitrary shell commands will
+			// run. The .weft/config.toml file (and specifically [verify].command) is
+			// security-sensitive and must only be writable by trusted parties.
+			//
 			// The engine ran the gate fine, so this verb exits 0 regardless of the
 			// gate's own exit — the pass/fail verdict is DATA (spec §3).
 			res, err := a.Runner.Run("sh", "-c", gate)
@@ -63,14 +69,11 @@ func (a *App) newPickLandCmd() *cobra.Command {
 			}
 			// Never land a conflicted change (seam 4 §6): the gate is concrete —
 			// the change must not be in conflicts().
-			res, err := run.JJ(a.Runner, "log", "-r", "conflicts() & "+change, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+			conflicted, err := changeConflicted(a.Runner, change)
 			if err != nil {
-				return exit.Hardf("jj conflicts check could not run: %v", err)
+				return err
 			}
-			if res.Code != 0 {
-				return exit.Hardf("jj conflicts check failed: %s", strings.TrimSpace(res.Stderr))
-			}
-			if strings.TrimSpace(res.Stdout) != "" {
+			if conflicted {
 				return exit.Invocationf("refusing to land %s: change %s is conflicted (resolve first)", bead, change)
 			}
 			if res, err := run.BD(a.Runner, "close", bead, "--suggest-next"); err != nil {
@@ -138,7 +141,7 @@ func (a *App) newPickSealCmd() *cobra.Command {
 			if existing := changeFromLabels(info.Labels); existing != "" {
 				return exit.Invocationf("bead %s is already sealed (change %s); use 'weft pick redo %s' to re-seal", bead, existing, bead)
 			}
-			msg := fmt.Sprintf("%s(%s): %s", ctype, bead, info.Title)
+			msg := fmt.Sprintf("%s(%s): %s", ctype, bead, sanitizeSubject(info.Title))
 			if res, err := run.JJ(a.Runner, "commit", "-m", msg); err != nil {
 				return exit.Hardf("jj commit could not run: %v", err)
 			} else if res.Code != 0 {
@@ -167,4 +170,27 @@ func (a *App) newPickSealCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&ctype, "type", "feat", "conventional-commit type for the message")
 	return c
+}
+
+// sanitizeSubject strips or collapses characters that must not appear in a
+// conventional-commit subject line: any run of control characters (per
+// unicode.IsControl — C0 0x00–0x1F incl. \r \n \t, DEL 0x7F, and C1
+// 0x80–0x9F) is replaced by a single space, and the result is trimmed. This
+// prevents a multi-line or control-char bead title from breaking the commit
+// subject or cocogitto conventional-commit parsing.
+func sanitizeSubject(s string) string {
+	var b strings.Builder
+	inControl := false
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			if !inControl {
+				b.WriteByte(' ')
+				inControl = true
+			}
+		} else {
+			b.WriteRune(r)
+			inControl = false
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

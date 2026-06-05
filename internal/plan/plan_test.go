@@ -128,6 +128,50 @@ func TestValidateEpicKeyRefYieldsOnlyReservedIssue(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvalidRefCharset(t *testing.T) {
+	cases := []struct {
+		name string
+		ref  string
+	}{
+		{"colon", "a:b"},
+		{"space", "a b"},
+		{"comma", "a,b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := WarpPlan{
+				Epic:  Epic{Title: "E"},
+				Picks: []Pick{{Ref: tc.ref, Title: "T", Description: "d"}},
+			}
+			issues := Validate(p)
+			want := fmt.Sprintf("pick.ref %q contains invalid characters (allowed: a-z A-Z 0-9 . _ -)", tc.ref)
+			found := false
+			for _, is := range issues {
+				if is.Message == want && is.Ref == tc.ref {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected charset issue %q attributed to ref %q; issues=%+v", want, tc.ref, issues)
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsDotsHyphensUnderscores(t *testing.T) {
+	p := WarpPlan{
+		Epic: Epic{Title: "E"},
+		Picks: []Pick{
+			{Ref: "e.1", Title: "A", Description: "do A"},
+			{Ref: "weft-hjx.5", Title: "B", Description: "do B", Needs: []string{"e.1"}},
+			{Ref: "under_score", Title: "C", Description: "do C"},
+		},
+	}
+	if got := Validate(p); len(got) != 0 {
+		t.Fatalf("want valid, got issues: %+v", got)
+	}
+}
+
 func TestParseReadsPickFields(t *testing.T) {
 	src := []byte(`{"epic":{"title":"E","description":"d"},"picks":[{"ref":"p1","title":"A","description":"a","files":["x.go"],"priority":1}]}`)
 	p, err := Parse(src)

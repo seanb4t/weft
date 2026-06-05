@@ -93,14 +93,14 @@ func TestBuildReplanMatchedCreatedDeferred(t *testing.T) {
 		t.Errorf("deferred = %v", rp.DeferredEdges)
 	}
 	// matched record must carry id + preserved status + weft-ref label.
-	if !bytes.Contains(rp.JSONL, []byte(`"id":"e.1"`)) {
-		t.Errorf("expected matched id in JSONL: %s", rp.JSONL)
+	if !bytes.Contains(rp.JSONL(), []byte(`"id":"e.1"`)) {
+		t.Errorf("expected matched id in JSONL: %s", rp.JSONL())
 	}
-	if !bytes.Contains(rp.JSONL, []byte(`"in_progress"`)) {
-		t.Errorf("expected preserved status in JSONL: %s", rp.JSONL)
+	if !bytes.Contains(rp.JSONL(), []byte(`"in_progress"`)) {
+		t.Errorf("expected preserved status in JSONL: %s", rp.JSONL())
 	}
-	if !bytes.Contains(rp.JSONL, []byte(`weft-ref:a`)) {
-		t.Errorf("expected weft-ref label in JSONL: %s", rp.JSONL)
+	if !bytes.Contains(rp.JSONL(), []byte(`weft-ref:a`)) {
+		t.Errorf("expected weft-ref label in JSONL: %s", rp.JSONL())
 	}
 }
 
@@ -122,8 +122,8 @@ func TestBuildReplanMatchedEdgeBecomesDependency(t *testing.T) {
 	if len(rp.DeferredEdges) != 0 {
 		t.Errorf("no edges should defer when both matched: %v", rp.DeferredEdges)
 	}
-	if !bytes.Contains(rp.JSONL, []byte(`"depends_on_id":"e.1"`)) {
-		t.Errorf("expected b->a dependency by id: %s", rp.JSONL)
+	if !bytes.Contains(rp.JSONL(), []byte(`"depends_on_id":"e.1"`)) {
+		t.Errorf("expected b->a dependency by id: %s", rp.JSONL())
 	}
 }
 
@@ -156,9 +156,9 @@ func TestBuildReplanMatchedStatusPreserved(t *testing.T) {
 		t.Fatalf("BuildReplan: %v", err)
 	}
 
-	lines := bytes.Split(bytes.TrimRight(rp.JSONL, "\n"), []byte("\n"))
+	lines := bytes.Split(bytes.TrimRight(rp.JSONL(), "\n"), []byte("\n"))
 	if len(lines) != 2 {
-		t.Fatalf("expected 2 JSONL lines, got %d: %s", len(lines), rp.JSONL)
+		t.Fatalf("expected 2 JSONL lines, got %d: %s", len(lines), rp.JSONL())
 	}
 
 	recFor := func(ref string) map[string]any {
@@ -190,6 +190,38 @@ func TestBuildReplanMatchedStatusPreserved(t *testing.T) {
 	}
 	if _, ok := bRec["status"]; ok {
 		t.Errorf("unmatched bead b: status field should be absent (omitempty), got %v", bRec["status"])
+	}
+}
+
+// TestReplanJSONLImmutable verifies that JSONL() returns a defensive copy: mutating
+// the returned slice must not affect subsequent calls.
+func TestReplanJSONLImmutable(t *testing.T) {
+	wp := WarpPlan{
+		Epic:  Epic{Title: "E"},
+		Picks: []Pick{{Ref: "a", Title: "A", Description: "a"}},
+	}
+	d := Derive(wp.Picks, nil, 1)
+	rp, err := BuildReplan(wp, d, "e", nil)
+	if err != nil {
+		t.Fatalf("BuildReplan: %v", err)
+	}
+
+	first := rp.JSONL()
+	if len(first) == 0 {
+		t.Fatal("JSONL() returned empty slice")
+	}
+	// Snapshot the expected bytes independently of any slice the accessor returns.
+	want := append([]byte(nil), first...)
+
+	// Mutate the first returned slice's backing array.
+	first[0] = 'X'
+
+	// A fresh call must be unaffected. With a value receiver and a shared backing
+	// array (no defensive copy), this second call would alias `first` and observe
+	// the mutation; the copy is what makes them independent.
+	second := rp.JSONL()
+	if !bytes.Equal(second, want) {
+		t.Errorf("JSONL() is not a defensive copy: a later call observed a mutation of an earlier return (want %q, got %q)", want, second)
 	}
 }
 
@@ -265,7 +297,7 @@ func TestBuildReplanIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildReplan reversed: %v", err)
 	}
-	if !bytes.Equal(rp1.JSONL, rp2.JSONL) {
-		t.Errorf("BuildReplan not deterministic:\n  forward  = %s\n  reversed = %s", rp1.JSONL, rp2.JSONL)
+	if !bytes.Equal(rp1.JSONL(), rp2.JSONL()) {
+		t.Errorf("BuildReplan not deterministic:\n  forward  = %s\n  reversed = %s", rp1.JSONL(), rp2.JSONL())
 	}
 }

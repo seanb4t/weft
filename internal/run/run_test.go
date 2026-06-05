@@ -45,6 +45,40 @@ func TestJJPrependsNoPager(t *testing.T) {
 	}
 }
 
+// TestBDInvokesRunnerWithNameAndArgs verifies that BD calls the runner with
+// name "bd" and passes through args unchanged, returning its Result/error
+// (qeg.10).
+func TestBDInvokesRunnerWithNameAndArgs(t *testing.T) {
+	want := Result{Stdout: "ok\n", Code: 0}
+	fake := &resultRunner{res: want}
+	got, err := BD(fake, "ready", "--parent", "weft-hjx", "--limit", "5")
+	if err != nil {
+		t.Fatalf("BD returned unexpected error: %v", err)
+	}
+	if got != want {
+		t.Errorf("BD result = %+v, want %+v", got, want)
+	}
+	if fake.name != "bd" {
+		t.Errorf("BD called runner with name %q, want %q", fake.name, "bd")
+	}
+	wantArgs := []string{"ready", "--parent", "weft-hjx", "--limit", "5"}
+	if !equal(fake.args, wantArgs) {
+		t.Errorf("BD args = %v, want %v", fake.args, wantArgs)
+	}
+}
+
+// resultRunner records the last call and returns a fixed Result.
+type resultRunner struct {
+	name string
+	args []string
+	res  Result
+}
+
+func (r *resultRunner) Run(name string, args ...string) (Result, error) {
+	r.name, r.args = name, args
+	return r.res, nil
+}
+
 type fakeRunner struct {
 	name string
 	args []string

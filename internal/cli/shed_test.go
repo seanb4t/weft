@@ -109,13 +109,24 @@ func TestShedFormMaxDefaultsFromConfig(t *testing.T) {
 
 // routeRunner is a recording fake that dispatches each call through fn, so a
 // test can return different results per command and assert call ordering.
+//
+// Optional errFn: when non-nil, it is called first; if it returns a non-nil
+// error the Run method records the call and returns (run.Result{}, err)
+// without invoking fn. This allows targeted error-injection in tests without
+// affecting existing tests (errFn is nil by default).
 type routeRunner struct {
 	fn    func(name string, args []string) run.Result
+	errFn func(name string, args []string) error
 	calls [][]string
 }
 
 func (r *routeRunner) Run(name string, args ...string) (run.Result, error) {
 	r.calls = append(r.calls, append([]string{name}, args...))
+	if r.errFn != nil {
+		if err := r.errFn(name, args); err != nil {
+			return run.Result{}, err
+		}
+	}
 	return r.fn(name, args), nil
 }
 
@@ -432,6 +443,17 @@ func TestShedIntegrateConflictsCarryBead(t *testing.T) {
 	}
 	if got := env.Data.Conflicts[0]; got.Bead != "weft-hjx.4.2" || got.Change != "chB" {
 		t.Errorf("conflicts[0] = %+v; want {bead:weft-hjx.4.2 change:chB}", got)
+	}
+}
+
+// TestShedFormMalformedBdReadyJSONIsHardFailure verifies that when bd ready
+// returns output that cannot be unmarshalled as JSON, shed form exits Hard (2)
+// (qeg.13).
+func TestShedFormMalformedBdReadyJSONIsHardFailure(t *testing.T) {
+	fake := &scriptedRunner{res: run.Result{Stdout: `not valid json`, Code: 0}}
+	_, err := newTestCmd(fake, "shed", "form", "--epic", "weft-hjx")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("malformed bd ready JSON should be a hard failure (exit 2), got %d (err=%v)", got, err)
 	}
 }
 

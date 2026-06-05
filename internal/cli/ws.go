@@ -33,12 +33,7 @@ func (a *App) newWsListCmd() *cobra.Command {
 			if res.Code != 0 {
 				return exit.Hardf("jj workspace list failed: %s", strings.TrimSpace(res.Stderr))
 			}
-			names := []string{} // non-nil so empty output serializes as [] not null
-			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-				if ln = strings.TrimSpace(ln); ln != "" {
-					names = append(names, ln)
-				}
-			}
+			names := splitTrimLines(res.Stdout)
 			data := map[string]any{"workspaces": names}
 			return Emit(cmd, "ws.list", data, fmt.Sprintf("workspaces: %s", strings.Join(names, " ")))
 		},
@@ -83,6 +78,15 @@ func (a *App) newWsForgetCmd() *cobra.Command {
 				return err
 			}
 			name := workspace.Name(bead)
+			path := workspace.Path(root, a.Config.Workspace.Root, bead)
+			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
+			safe, err := workspace.ContainsResolved(wtRoot, path)
+			if err != nil {
+				return exit.Hardf("refusing to remove %q: cannot resolve path for containment check: %v", name, err)
+			}
+			if !safe {
+				return exit.Hardf("refusing to remove %q: resolves outside worktrees root %s", name, wtRoot)
+			}
 			res, err := run.JJ(a.Runner, "workspace", "forget", name)
 			if err != nil {
 				return exit.Hardf("jj workspace forget could not run: %v", err)
@@ -90,7 +94,6 @@ func (a *App) newWsForgetCmd() *cobra.Command {
 			if res.Code != 0 {
 				return exit.Hardf("jj workspace forget failed: %s", strings.TrimSpace(res.Stderr))
 			}
-			path := workspace.Path(root, a.Config.Workspace.Root, bead)
 			if err := os.RemoveAll(path); err != nil {
 				return exit.Hardf("rm workspace dir %s: %v", path, err)
 			}

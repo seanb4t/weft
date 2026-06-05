@@ -156,7 +156,7 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		}
 		return Emit(cmd, "plan.emit", data, replanText(epic, rp, true))
 	}
-	path, cleanup, err := writeTempPayload("weft-replan-*.jsonl", rp.JSONL)
+	path, cleanup, err := writeTempPayload("weft-replan-*.jsonl", rp.JSONL())
 	if err != nil {
 		return err
 	}

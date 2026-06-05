@@ -25,6 +25,10 @@ type Config struct {
 	Workspace struct {
 		Root string `toml:"root"`
 	} `toml:"workspace"`
+	// Verify.Command is executed via `sh -c` by `pick verify`. It is a
+	// trusted-config boundary, NOT a sandbox: any shell command here will run
+	// with the invoking user's privileges. Treat .weft/config.toml as a
+	// security-sensitive file — restrict write access to trusted parties.
 	Verify struct {
 		Command string `toml:"command"`
 	} `toml:"verify"`

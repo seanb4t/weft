@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/seanb4t/weft/internal/config"
 	"github.com/seanb4t/weft/internal/run"
 )
 
@@ -44,6 +45,24 @@ func (errRunner) Run(string, ...string) (run.Result, error) {
 	return run.Result{}, errors.New("exec: command not found")
 }
 
+// TestNewAppPanicsOnNilRunner verifies that NewApp panics immediately when
+// given a nil Runner rather than deferring to a nil-deref deep in a verb
+// (qeg.6).
+func TestNewAppPanicsOnNilRunner(t *testing.T) {
+	panicked := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+			}
+		}()
+		NewApp(nil, config.Config{})
+	}()
+	if !panicked {
+		t.Fatal("NewApp(nil, ...) should panic but did not")
+	}
+}
+
 func TestVersionText(t *testing.T) {
 	out, err := newTestCmd(nil, "version")
 	if err != nil {
@@ -72,5 +91,26 @@ func TestVersionPick(t *testing.T) {
 	}
 	if strings.TrimSpace(out.String()) != Version {
 		t.Errorf("pick output = %q, want %q", strings.TrimSpace(out.String()), Version)
+	}
+}
+
+// TestPickStringBoolAndNumber verifies that pickString renders bools and JSON
+// numbers (float64) without quoting or spurious decimals (qeg.22).
+// JSON numbers decode as float64; 42 must render as "42", not "42.0".
+func TestPickStringBoolAndNumber(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+	}{
+		{true, "true"},
+		{false, "false"},
+		{float64(42), "42"},
+		{float64(3.14), "3.14"},
+		{"hello", "hello"},
+	}
+	for _, tc := range cases {
+		if got := pickString(tc.in); got != tc.want {
+			t.Errorf("pickString(%v) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

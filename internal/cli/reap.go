@@ -36,9 +36,8 @@ func (a *App) newReapCmd() *cobra.Command {
 			}
 			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
 			reaped := []string{}
-			for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-				name := strings.TrimSpace(ln)
-				if name == "" || name == "default" {
+			for _, name := range splitTrimLines(res.Stdout) {
+				if name == "default" {
 					continue // never reap the orchestrator's own workspace
 				}
 				bead, _ := workspace.Resolve(name) // kind-aware: strips -resolve, desanitizes
@@ -64,7 +63,11 @@ func (a *App) newReapCmd() *cobra.Command {
 				// worktrees root. A jj workspace name carrying "/" or ".." would
 				// otherwise let the join escape wtRoot and delete unrelated dirs.
 				dir := filepath.Join(wtRoot, name)
-				if !workspace.Contains(wtRoot, dir) {
+				safe, err := workspace.ContainsResolved(wtRoot, dir)
+				if err != nil {
+					return exit.Hardf("refusing to reap %q: cannot resolve path for containment check: %v", name, err)
+				}
+				if !safe {
 					return exit.Hardf("refusing to reap %q: resolves outside worktrees root %s", name, wtRoot)
 				}
 				if res, err := run.JJ(a.Runner, "workspace", "forget", name); err != nil {

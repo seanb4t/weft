@@ -151,6 +151,20 @@ blocked:   bd blocked + why
 conflicts: unresolved first-class conflicts in the stack
 ```
 
+**Output key aliases:** the `resume --json` `data` object uses vocabulary from
+this spec rather than bare `bd` status names:
+
+| Output key | bd status | Notes |
+|---|---|---|
+| `landed` | `closed` | Picks that completed the full lifecycle and were `bd close`d. |
+| `in_flight` | `in_progress` | Picks currently being worked (workspace exists or is being created). |
+| `ready` | — (from `bd ready`) | Unblocked, not yet picked up. |
+| `blocked` | `blocked` | Waiting on a dependency. |
+| `conflicts` | — (from `jj conflicts()`) | Change-ids with unresolved first-class jj conflicts. |
+
+These aliases are load-bearing for prompt consumers: use `data.landed`,
+`data.in_flight`, etc. when branching on `resume --json` output.
+
 **Read-only is a hard invariant.** Even after a crash, recovery is a *separate
 explicit* `pick redo` / `shed abandon` — never an implicit resume side-effect.
 `resume --json` is also the substrate a fresh session consumes after compaction

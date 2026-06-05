@@ -5,6 +5,7 @@
 package workspace
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -93,6 +94,58 @@ func TestResolveNameAndPath(t *testing.T) {
 	// Same worktrees root as an executor workspace, different leaf.
 	if filepath.Dir(p) != filepath.Dir(Path("/repo", "", "weft-hjx.4.2")) {
 		t.Fatalf("ResolvePath root = %q, want same as Path root", filepath.Dir(p))
+	}
+}
+
+// TestContainsResolved verifies the symlink-aware containment helper used by all
+// destructive remove sites. Four cases:
+//  1. in-root real dir → true, nil.
+//  2. symlink inside root whose target is OUTSIDE root → false, nil (the escape).
+//  3. non-existent child under root → true, nil (lexical fallback; RemoveAll is no-op).
+//  4. non-existent parent → non-nil error (cannot resolve parent).
+func TestContainsResolved(t *testing.T) {
+	// Case 1: real in-root directory → true, nil.
+	root := t.TempDir()
+	child := filepath.Join(root, "ws1")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("mkdir child: %v", err)
+	}
+	got, err := ContainsResolved(root, child)
+	if err != nil {
+		t.Fatalf("case 1 (real in-root): unexpected error: %v", err)
+	}
+	if !got {
+		t.Errorf("case 1 (real in-root): want true, got false")
+	}
+
+	// Case 2: symlink INSIDE root whose target is OUTSIDE root → false, nil.
+	outside := t.TempDir() // completely separate temp dir
+	link := filepath.Join(root, "evil")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	got, err = ContainsResolved(root, link)
+	if err != nil {
+		t.Fatalf("case 2 (symlink escape): unexpected error: %v", err)
+	}
+	if got {
+		t.Errorf("case 2 (symlink escape): want false (symlink points outside root), got true")
+	}
+
+	// Case 3: non-existent child under root → true, nil (lexical fallback).
+	nonExist := filepath.Join(root, "does-not-exist")
+	got, err = ContainsResolved(root, nonExist)
+	if err != nil {
+		t.Fatalf("case 3 (non-existent child): unexpected error: %v", err)
+	}
+	if !got {
+		t.Errorf("case 3 (non-existent child): want true (lexical fallback), got false")
+	}
+
+	// Case 4: non-existent parent → non-nil error.
+	_, err = ContainsResolved("/no/such/parent", filepath.Join("/no/such/parent", "child"))
+	if err == nil {
+		t.Errorf("case 4 (non-existent parent): want non-nil error, got nil")
 	}
 }
 

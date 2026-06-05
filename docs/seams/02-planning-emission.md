@@ -77,6 +77,13 @@ is the source of truth** (there is no persisted `ROADMAP.md`).
   via the `weft-ref:<ref>` labels (beads is the brain) — no sidecar state file,
   and the plan file is never mutated post-emit. (The exact `bd create --graph`
   field mapping, incl. per-node labels, is §8.)
+  - **Character-set constraint:** `ref` MUST match `^[a-zA-Z0-9._-]+$`
+    (ASCII letters, digits, dot, underscore, hyphen; non-empty). The ref is
+    stamped verbatim into the `weft-ref:<ref>` bead label and used as a
+    `bd create --graph` node key — so colons (`:` is the label namespace
+    separator), commas, whitespace, and control characters are disallowed
+    because they would make the label round-trip ambiguous. Refs like `p1`,
+    `e.1`, and `weft-hjx.5` satisfy the constraint.
 - `description` carries the whole plan for that pick — there is no separate
   `PLAN.md` (design.md §5: the bead description *is* the plan).
 - `files` is the pick's declared file-ownership estimate; it drives §4 dep

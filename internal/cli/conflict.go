@@ -7,6 +7,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/seanb4t/weft/internal/exit"
@@ -14,6 +15,17 @@ import (
 	"github.com/seanb4t/weft/internal/workspace"
 	"github.com/spf13/cobra"
 )
+
+// changeIDPattern matches a bare jj change-id. jj renders change-ids in a
+// lowercase alphabet; restricting to [a-z0-9] excludes every revset
+// metacharacter (& | : . ( ) ~ and whitespace), so a tampered jj-change
+// label cannot alter revset evaluation when interpolated.
+var changeIDPattern = regexp.MustCompile(`^[a-z0-9]+$`)
+
+// workspaceRevPattern matches a "<workspace-name>@" working-copy reference,
+// where the name is a Sanitize()d bead-id ([a-z0-9_-]); it likewise excludes
+// revset metacharacters apart from the trailing '@' addressing operator.
+var workspaceRevPattern = regexp.MustCompile(`^[a-z0-9_-]+@$`)
 
 func (a *App) newConflictCmd() *cobra.Command {
 	c := &cobra.Command{Use: "conflict", Short: "Conflict-resolution choreography (spec seam 4)"}
@@ -24,6 +36,9 @@ func (a *App) newConflictCmd() *cobra.Command {
 // changeConflicted reports whether a revision is in jj's conflicts() set. The
 // revision may be a change-id or a <workspace-name>@ working-copy reference.
 func changeConflicted(r run.Runner, rev string) (bool, error) {
+	if !changeIDPattern.MatchString(rev) && !workspaceRevPattern.MatchString(rev) {
+		return false, exit.Hardf("refusing to interpolate unsafe revision %q into a revset", rev)
+	}
 	res, err := run.JJ(r, "log", "-r", "conflicts() & "+rev, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 	if err != nil {
 		return false, exit.Hardf("jj conflicts check could not run: %v", err)
@@ -35,10 +50,14 @@ func changeConflicted(r run.Runner, rev string) (bool, error) {
 }
 
 // scopedConflictChanges lists conflicted change-ids within the subtree rooted at
-// rootChange (the healed change + any descendants the squash rebased). Unlike
-// resume's repo-wide conflictChanges, finalize uses this as the orchestrator's
-// loop-termination gate, so it must not surface conflicts from unrelated epics.
+// rootChange (the healed change + any descendants the squash rebased). finalize
+// uses this as the orchestrator's loop-termination gate, so it scopes by subtree
+// (descendants) rather than resume's explicit epic-stack union — both avoid
+// surfacing conflicts from unrelated epics.
 func scopedConflictChanges(r run.Runner, rootChange string) ([]string, error) {
+	if !changeIDPattern.MatchString(rootChange) {
+		return nil, exit.Hardf("refusing to interpolate unsafe revision %q into a revset", rootChange)
+	}
 	res, err := run.JJ(r, "log", "-r", "conflicts() & descendants("+rootChange+")", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 	if err != nil {
 		return nil, exit.Hardf("jj scoped conflicts check could not run: %v", err)
@@ -46,13 +65,7 @@ func scopedConflictChanges(r run.Runner, rootChange string) ([]string, error) {
 	if res.Code != 0 {
 		return nil, exit.Hardf("jj scoped conflicts check failed: %s", strings.TrimSpace(res.Stderr))
 	}
-	out := []string{}
-	for _, ln := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-		if ln = strings.TrimSpace(ln); ln != "" {
-			out = append(out, ln)
-		}
-	}
-	return out, nil
+	return splitTrimLines(res.Stdout), nil
 }
 
 func (a *App) newConflictOpenCmd() *cobra.Command {
@@ -185,7 +198,11 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 			// Defense-in-depth: ResolvePath always yields an in-root path, but guard
 			// against any future refactor that might produce an out-of-root path.
 			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
-			if !workspace.Contains(wtRoot, path) {
+			safe, err := workspace.ContainsResolved(wtRoot, path)
+			if err != nil {
+				return exit.Hardf("refusing to reap %q: cannot resolve path for containment check: %v", name, err)
+			}
+			if !safe {
 				return exit.Hardf("refusing to reap %q: resolves outside worktrees root %s", name, wtRoot)
 			}
 			if res, err := run.JJ(a.Runner, "workspace", "forget", name); err != nil {
