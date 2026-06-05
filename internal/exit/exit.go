@@ -11,10 +11,16 @@ import (
 	"fmt"
 )
 
-// Error carries an engine exit code alongside its cause.
-//
-//	1 = invocation error (bad args, missing workspace, unknown bead)
-//	2 = hard failure (an underlying bd/jj/gh command failed)
+// Engine exit codes (spec §3). The code reflects whether the engine did its
+// job, never the verdict of the work.
+const (
+	CodeInvocation = 1 // bad args, missing workspace, unknown bead
+	CodeHard       = 2 // an underlying bd/jj/gh command failed
+)
+
+// Error carries an engine exit code alongside its cause. Error MUST be built
+// via the Invocation*/Hard* constructors; a bare &Error{} has Code 0 and reads
+// as success even though it is a non-nil error.
 type Error struct {
 	Code int
 	Err  error
@@ -29,20 +35,20 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-// Invocation wraps err as exit code 1.
-func Invocation(err error) *Error { return &Error{Code: 1, Err: err} }
+// Invocation wraps err as exit code 1 (CodeInvocation).
+func Invocation(err error) *Error { return &Error{Code: CodeInvocation, Err: err} }
 
-// Invocationf formats an exit-code-1 error.
+// Invocationf formats a CodeInvocation (exit code 1) error.
 func Invocationf(format string, a ...any) *Error {
-	return &Error{Code: 1, Err: fmt.Errorf(format, a...)}
+	return &Error{Code: CodeInvocation, Err: fmt.Errorf(format, a...)}
 }
 
-// Hard wraps err as exit code 2.
-func Hard(err error) *Error { return &Error{Code: 2, Err: err} }
+// Hard wraps err as exit code 2 (CodeHard).
+func Hard(err error) *Error { return &Error{Code: CodeHard, Err: err} }
 
-// Hardf formats an exit-code-2 error.
+// Hardf formats a CodeHard (exit code 2) error.
 func Hardf(format string, a ...any) *Error {
-	return &Error{Code: 2, Err: fmt.Errorf(format, a...)}
+	return &Error{Code: CodeHard, Err: fmt.Errorf(format, a...)}
 }
 
 // Code returns the engine exit code for err: 0 for nil, the typed code for an

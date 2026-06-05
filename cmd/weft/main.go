@@ -21,7 +21,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "weft: invalid .weft/config.toml:", err)
 		os.Exit(exit.Code(exit.Hard(err)))
 	}
-	root := cli.NewRootCmd(&cli.App{Runner: run.Exec{}, Config: cfg})
+	root := cli.NewRootCmd(cli.NewApp(run.Exec{}, cfg))
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(exit.Code(err))

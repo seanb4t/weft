@@ -17,6 +17,15 @@ type Envelope struct {
 	Next string `json:"next,omitempty"` // advisory hint; never authoritative
 }
 
+// New returns a success envelope (OK true) for verb carrying data. Construct
+// success envelopes via New rather than a struct literal: the zero value has
+// OK=false, which reads as a failure envelope. weft never emits a failure
+// envelope (engine errors surface as exit codes, spec §3), so New is the only
+// blessed constructor.
+func New(verb string, data any) Envelope {
+	return Envelope{OK: true, Verb: verb, Data: data}
+}
+
 // JSON renders the envelope as indented JSON.
 func (e Envelope) JSON() ([]byte, error) {
 	return json.MarshalIndent(e, "", "  ")

@@ -4,7 +4,10 @@
 
 package envelope
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPick(t *testing.T) {
 	e := Envelope{
@@ -38,4 +41,32 @@ func TestPick(t *testing.T) {
 			t.Fatal("expected error for missing path")
 		}
 	})
+}
+
+// TestPickScalarDescentErrors verifies that attempting to descend into a scalar
+// value (e.g. path "data.x.y" when data.x is a string) returns an error
+// (qeg.11). The error must mention the offending segment.
+func TestPickScalarDescentErrors(t *testing.T) {
+	e := Envelope{
+		OK:   true,
+		Verb: "test",
+		Data: map[string]any{"x": "scalar"},
+	}
+	_, err := Pick(e, "data.x.y")
+	if err == nil {
+		t.Fatal("expected error when descending into a scalar, got nil")
+	}
+	// The error should mention the path segment that caused the problem.
+	if !containsAny(err.Error(), "x", "y", "data.x.y") {
+		t.Errorf("error %q should reference the problematic path", err.Error())
+	}
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if sub != "" && strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }

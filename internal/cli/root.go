@@ -19,6 +19,16 @@ type App struct {
 	Config config.Config
 }
 
+// NewApp constructs an App, guarding the injected Runner. A nil Runner is a
+// programmer error (every verb dispatches subprocesses through it), so this
+// panics rather than deferring to an opaque nil-deref deep in a verb.
+func NewApp(runner run.Runner, cfg config.Config) *App {
+	if runner == nil {
+		panic("cli.NewApp: nil Runner")
+	}
+	return &App{Runner: runner, Config: cfg}
+}
+
 // NewRootCmd builds the weft root command and its verb tree.
 func NewRootCmd(app *App) *cobra.Command {
 	root := &cobra.Command{

@@ -446,6 +446,17 @@ func TestShedIntegrateConflictsCarryBead(t *testing.T) {
 	}
 }
 
+// TestShedFormMalformedBdReadyJSONIsHardFailure verifies that when bd ready
+// returns output that cannot be unmarshalled as JSON, shed form exits Hard (2)
+// (qeg.13).
+func TestShedFormMalformedBdReadyJSONIsHardFailure(t *testing.T) {
+	fake := &scriptedRunner{res: run.Result{Stdout: `not valid json`, Code: 0}}
+	_, err := newTestCmd(fake, "shed", "form", "--epic", "weft-hjx")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("malformed bd ready JSON should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
 // TestShedIntegrateConflictUnknownChangeErrors verifies that if jj reports a
 // conflicted change-id that is NOT in the integration stack (and therefore cannot
 // be mapped to a bead), integrate returns a hard failure instead of silently
