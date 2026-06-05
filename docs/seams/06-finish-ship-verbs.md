@@ -199,8 +199,13 @@ Matches every sibling verb (seam-1 §3):
 ```json
 { "epic": "...", "merged": true, "merge_style": "squash_or_rebase",
   "abandoned": ["<change-id>", "..."], "bookmark_deleted": true,
-  "remote_branch_deleted": false, "dry_run": false }
+  "remote_branch_deleted": false, "remote_branch_warning": "", "dry_run": false }
 ```
+
+`remote_branch_warning` is present-but-empty (`""`) on success and on the
+spec-sanctioned silent 404 (§6.1.4 best-effort); it carries a diagnostic string
+only when the remote-branch deletion fails for a non-404 reason (slug
+resolution, auth/429/5xx, parse), which is surfaced without aborting reconcile.
 
 `merge_style` is a closed enum with exactly two values, one per detection branch
 (§6.1.3): `"merge_commit"` (pushed tip is an ancestor of trunk → rebase path)

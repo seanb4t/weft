@@ -6,6 +6,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -157,6 +158,86 @@ func TestFinishOpenRefusesEmptyEpic(t *testing.T) {
 		if len(c) > 0 && (strings.Contains(strings.Join(c, " "), "git push") || strings.Contains(strings.Join(c, " "), "pr create")) {
 			t.Errorf("must not push/create PR for an empty epic: %v", c)
 		}
+	}
+}
+
+// finishOpenPreflight error-branch coverage (weft-1vh). A subprocess that
+// cannot START (Runner returns a non-nil error) and one that exits non-zero are
+// BOTH engine hard failures (exit 2) for the jj steps routed through hardJJ;
+// gh auth status is the exception — its non-zero exit is a user-fixable
+// invocation error (exit 1). The tests below pin each of those mappings.
+
+func TestFinishOpenPreflightJJStRunnerError(t *testing.T) {
+	r := finishPreflightRunner(nil)
+	r.errFn = func(name string, args []string) error {
+		if name == "jj" && len(args) >= 2 && args[1] == "st" {
+			return errors.New("jj binary vanished")
+		}
+		return nil
+	}
+	_, err := newTestCmd(r, "finish", "open", "weft-e")
+	if got := exit.Code(err); got != 2 {
+		t.Errorf("jj st runner error must be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+func TestFinishOpenPreflightGHAuthRunnerError(t *testing.T) {
+	r := finishPreflightRunner(nil)
+	r.errFn = func(name string, args []string) error {
+		if name == "gh" && len(args) >= 2 && args[0] == "auth" && args[1] == "status" {
+			return errors.New("gh not installed")
+		}
+		return nil
+	}
+	_, err := newTestCmd(r, "finish", "open", "weft-e")
+	if got := exit.Code(err); got != 2 {
+		t.Errorf("gh auth status runner error must be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+// An installed-but-unauthenticated gh (non-zero exit, not a runner error) is a
+// user-fixable invocation error (exit 1) — distinct from the could-not-run
+// hard-fail above.
+func TestFinishOpenRefusesUnauthenticatedGH(t *testing.T) {
+	r := finishPreflightRunner(func(j string) (run.Result, bool) {
+		if strings.Contains(j, "auth status") {
+			return run.Result{Code: 1, Stderr: "not logged in"}, true
+		}
+		return run.Result{}, false
+	})
+	_, err := newTestCmd(r, "finish", "open", "weft-e")
+	if got := exit.Code(err); got != 1 {
+		t.Errorf("unauthenticated gh must be an invocation error (exit 1), got %d (err=%v)", got, err)
+	}
+}
+
+// hardJJ maps a NON-ZERO exit (distinct from a runner error) to a hard failure
+// too. Cover the two preflight steps beyond jj st that route through it — jj log
+// and jj git remote list — so a broken jj (e.g. corrupt repo) can't fall through
+// the guard untested (weft-7tj.7).
+func TestFinishOpenPreflightJJLogNonZeroExit(t *testing.T) {
+	r := finishPreflightRunner(func(j string) (run.Result, bool) {
+		if strings.Contains(j, "log -r trunk()..@") {
+			return run.Result{Code: 1, Stderr: "jj log exploded"}, true
+		}
+		return run.Result{}, false
+	})
+	_, err := newTestCmd(r, "finish", "open", "weft-e")
+	if got := exit.Code(err); got != 2 {
+		t.Errorf("jj log non-zero exit must be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+func TestFinishOpenPreflightRemoteListNonZeroExit(t *testing.T) {
+	r := finishPreflightRunner(func(j string) (run.Result, bool) {
+		if strings.Contains(j, "git remote list") {
+			return run.Result{Code: 1, Stderr: "remote list exploded"}, true
+		}
+		return run.Result{}, false
+	})
+	_, err := newTestCmd(r, "finish", "open", "weft-e")
+	if got := exit.Code(err); got != 2 {
+		t.Errorf("jj git remote list non-zero exit must be a hard failure (exit 2), got %d (err=%v)", got, err)
 	}
 }
 
@@ -423,6 +504,73 @@ func TestFinishReconcileDeletesStaleRemoteBranch(t *testing.T) {
 	}
 }
 
+// A non-404 delete failure (auth/5xx/429) is spec-sanctioned best-effort — it
+// must NOT fail the verb, but it MUST be surfaced rather than collapsed into the
+// same silent false as a 404 (weft-3jg / weft-9db.12).
+func TestFinishReconcileSurfacesNon404DeleteFailure(t *testing.T) {
+	r := mergedReconcileRunner(false, func(j string) (run.Result, bool) {
+		if strings.Contains(j, "repo view") {
+			return run.Result{Stdout: `{"nameWithOwner":"o/r"}`, Code: 0}, true
+		}
+		if strings.Contains(j, "api -X DELETE repos/o/r/git/refs/heads/weft-e") {
+			return run.Result{Code: 1, Stderr: "gh: Must have admin rights to Repository. (HTTP 403)"}, true
+		}
+		return run.Result{}, false
+	})
+	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("reconcile: %v", err) // best-effort: a 403 must not abort reconcile
+	}
+	var env struct {
+		Data struct {
+			RemoteBranchDeleted bool   `json:"remote_branch_deleted"`
+			RemoteBranchWarning string `json:"remote_branch_warning"`
+		} `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("unmarshal envelope: %v\n%s", e, out.String())
+	}
+	if env.Data.RemoteBranchDeleted {
+		t.Errorf("a 403 delete did not remove the branch; remote_branch_deleted must be false")
+	}
+	if !strings.Contains(env.Data.RemoteBranchWarning, "403") {
+		t.Errorf("non-404 failure must surface a warning carrying the gh stderr; got %q", env.Data.RemoteBranchWarning)
+	}
+}
+
+// A 404 (already-gone) is the expected best-effort path — silent: deleted=false,
+// no warning (spec §6.1 step 4).
+func TestFinishReconcileSilentOn404DeleteFailure(t *testing.T) {
+	r := mergedReconcileRunner(false, func(j string) (run.Result, bool) {
+		if strings.Contains(j, "repo view") {
+			return run.Result{Stdout: `{"nameWithOwner":"o/r"}`, Code: 0}, true
+		}
+		if strings.Contains(j, "api -X DELETE repos/o/r/git/refs/heads/weft-e") {
+			return run.Result{Code: 1, Stderr: "gh: Not Found (HTTP 404)"}, true
+		}
+		return run.Result{}, false
+	})
+	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var env struct {
+		Data struct {
+			RemoteBranchDeleted bool   `json:"remote_branch_deleted"`
+			RemoteBranchWarning string `json:"remote_branch_warning"`
+		} `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("unmarshal envelope: %v\n%s", e, out.String())
+	}
+	if env.Data.RemoteBranchDeleted {
+		t.Errorf("404 means already-gone: remote_branch_deleted must be false")
+	}
+	if env.Data.RemoteBranchWarning != "" {
+		t.Errorf("404 is spec-sanctioned silent best-effort; warning must be empty, got %q", env.Data.RemoteBranchWarning)
+	}
+}
+
 func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
 	r := mergedReconcileRunner(false, nil)
 	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--dry-run", "--json")
@@ -435,8 +583,21 @@ func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
 			t.Errorf("dry-run must not mutate; saw %v", c)
 		}
 	}
-	if !strings.Contains(out.String(), `"dry_run": true`) {
+	var env struct {
+		Data struct {
+			DryRun              bool   `json:"dry_run"`
+			RemoteBranchWarning string `json:"remote_branch_warning"`
+		} `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("unmarshal envelope: %v\n%s", e, out.String())
+	}
+	if !env.Data.DryRun {
 		t.Errorf("dry-run envelope missing dry_run:true: %q", out.String())
+	}
+	// Shape parity: the warning key is present-but-empty in dry-run, never absent.
+	if env.Data.RemoteBranchWarning != "" {
+		t.Errorf("dry-run deletes nothing; remote_branch_warning must be empty, got %q", env.Data.RemoteBranchWarning)
 	}
 }
 
@@ -518,14 +679,46 @@ func TestDeleteRemoteBranchAbsentReturnsFalse(t *testing.T) {
 		}
 		return run.Result{Code: 0}
 	}}
-	if deleteRemoteBranch(r, "weft-e") {
+	deleted, warn := deleteRemoteBranch(r, "weft-e")
+	if deleted {
 		t.Error("an already-absent remote branch (404) must yield false, not a deletion")
+	}
+	if warn != "" {
+		t.Errorf("a 404 is the silent best-effort case; warning must be empty, got %q", warn)
 	}
 }
 
-func TestDeleteRemoteBranchUnresolvableSlugReturnsFalse(t *testing.T) {
-	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 1} }} // repo view fails
-	if deleteRemoteBranch(r, "weft-e") {
+func TestDeleteRemoteBranchUnresolvableSlugSurfacesWarning(t *testing.T) {
+	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 1, Stderr: "no auth"} }} // repo view fails
+	deleted, warn := deleteRemoteBranch(r, "weft-e")
+	if deleted {
 		t.Error("an unresolvable repo slug must yield false")
+	}
+	if warn == "" {
+		t.Error("an unresolvable slug is a non-404 failure and must surface a warning, not stay silent")
+	}
+}
+
+// isHTTPNotFound must key on the numeric "HTTP 404" marker only — a bare
+// "not found" substring would mis-classify non-404 failures (a 403 permission
+// denial, a 422 reference error, a DNS lookup failure) as the silent 404 path
+// and swallow the warning weft-3jg exists to surface (weft-7tj.8).
+func TestIsHTTPNotFoundRequiresNumericMarker(t *testing.T) {
+	cases := []struct {
+		stderr string
+		want   bool
+	}{
+		{"gh: Not Found (HTTP 404)", true},
+		{"HTTP 404: Not Found", true},
+		{"gh: Must have admin rights to Repository. (HTTP 403)", false},
+		{"gh: Resource not found (HTTP 403)", false}, // the false-positive a bare "not found" match would wrongly silence
+		{"gh: Reference not found (HTTP 422)", false},
+		{"dial tcp: lookup api.github.com: no such host", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isHTTPNotFound(c.stderr); got != c.want {
+			t.Errorf("isHTTPNotFound(%q) = %v, want %v", c.stderr, got, c.want)
+		}
 	}
 }
