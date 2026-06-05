@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/seanb4t/weft/internal/exit"
 	"github.com/seanb4t/weft/internal/run"
 )
@@ -63,5 +65,91 @@ func assemblePRBody(epic, title string, picks []finishPick) string {
 	return b.String()
 }
 
-// (newFinishCmd and the subcommands are added in Tasks 3–6, which add the
-// cobra import at that point.)
+func (a *App) newFinishCmd() *cobra.Command {
+	finish := &cobra.Command{Use: "finish", Short: "Ship an epic: open a PR, then reconcile after merge (spec §6 / seam 6)"}
+	finish.AddCommand(a.newFinishOpenCmd(), a.newFinishReconcileCmd())
+	return finish
+}
+
+// finishOpenPreflight enforces the spec §4.1 step-1 / §5 guards. Returns the
+// closed picks (so the caller need not re-read) on success.
+func (a *App) finishOpenPreflight(epic string) ([]finishPick, error) {
+	// 1. Working tree clean: in jj, the clean state is an EMPTY @ on top of the
+	// described picks (post jj commit / jj new). jj prints this exact line.
+	if res, err := run.JJ(a.Runner, "st"); err != nil {
+		return nil, exit.Hardf("jj st could not run: %v", err)
+	} else if res.Code != 0 {
+		return nil, exit.Hardf("jj st failed: %s", strings.TrimSpace(res.Stderr))
+	} else if !strings.Contains(res.Stdout, "no changes") {
+		return nil, exit.Invocationf("working copy is not clean — commit your picks (jj commit) before finishing")
+	}
+	// 2. Stack non-empty: there is something between trunk() and @ to ship.
+	res, err := run.JJ(a.Runner, "log", "-r", "trunk()..@", "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
+	if err != nil {
+		return nil, exit.Hardf("jj log could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("jj log failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	if strings.TrimSpace(res.Stdout) == "" {
+		return nil, exit.Invocationf("nothing to ship for %s — no changes between trunk() and @", epic)
+	}
+	// 3. origin remote configured.
+	if res, err := run.JJ(a.Runner, "git", "remote", "list"); err != nil {
+		return nil, exit.Hardf("jj git remote list could not run: %v", err)
+	} else if res.Code != 0 {
+		return nil, exit.Hardf("jj git remote list failed: %s", strings.TrimSpace(res.Stderr))
+	} else if !strings.Contains(res.Stdout, "origin") {
+		return nil, exit.Invocationf("no 'origin' remote configured — cannot push %s", epic)
+	}
+	// 4. gh authenticated.
+	if res, err := run.GH(a.Runner, "auth", "status"); err != nil {
+		return nil, exit.Hardf("gh auth status could not run (is gh installed?): %v", err)
+	} else if res.Code != 0 {
+		return nil, exit.Invocationf("gh is not authenticated — run `gh auth login`")
+	}
+	// 5. Empty-epic guard (§5): refuse rather than open an empty PR.
+	picks, err := closedPicks(a.Runner, epic)
+	if err != nil {
+		return nil, err
+	}
+	if len(picks) == 0 {
+		return nil, exit.Invocationf("nothing woven to ship for %s — no closed beads", epic)
+	}
+	return picks, nil
+}
+
+func (a *App) newFinishOpenCmd() *cobra.Command {
+	var dryRun, draft bool
+	c := &cobra.Command{
+		Use:   "open <epic>",
+		Short: "Push the epic's stack and open a GitHub PR (body from closed beads)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			epic := args[0]
+			picks, err := a.finishOpenPreflight(epic)
+			if err != nil {
+				return err
+			}
+			_ = picks
+			_ = dryRun
+			_ = draft
+			return exit.Hardf("finish open happy path not yet implemented") // replaced in Task 4
+		},
+	}
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "emit the push plan + PR body + gh command without mutating")
+	c.Flags().BoolVar(&draft, "draft", false, "open the PR as a draft")
+	return c
+}
+
+func (a *App) newFinishReconcileCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "reconcile <epic>",
+		Short: "Reconcile local jj state after the epic's PR merges",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return exit.Hardf("finish reconcile not yet implemented") // replaced in Tasks 5–6
+		},
+	}
+	return c
+}
