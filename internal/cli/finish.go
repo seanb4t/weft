@@ -16,13 +16,16 @@ import (
 	"github.com/seanb4t/weft/internal/run"
 )
 
-// epicIDPattern matches a bead id (the epic argument). Restricting to
-// [a-zA-Z0-9._-] excludes every jj-revset metacharacter (space, '&', '|', ':',
-// '@', '(', ')', '~') and the path separator '/', so the epic value is safe to
-// interpolate into both the mergeStyle revset (<epic>@origin) and the GitHub API
-// ref path (repos/{slug}/git/refs/heads/<epic>). Mirrors the revset-injection
-// guard idiom on changeIDPattern (conflict.go); see spec §7.
-var epicIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+// epicIDPattern matches a bead id (the epic argument). The leading character
+// must be alphanumeric — this rejects a leading '-' (which jj/gh could read as a
+// flag) and pure-dot values like ".." (which would walk the GitHub API ref
+// path). The remaining [a-zA-Z0-9._-] class excludes every jj-revset
+// metacharacter (space, '&', '|', ':', '@', '(', ')', '~') and the path
+// separator '/', so the epic value is safe to interpolate into both the
+// mergeStyle revset (<epic>@origin) and the GitHub API ref path
+// (repos/{slug}/git/refs/heads/<epic>). Mirrors the revset-injection guard
+// idiom on changeIDPattern (conflict.go); see spec §7.
+var epicIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // validateEpicID rejects an epic argument that could alter a revset or walk the
 // GitHub API path, before any interpolation. Returns an invocation error

@@ -443,7 +443,7 @@ func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
 // --- input validation (epic id allowlist; revset/path injection guard) ---
 
 func TestFinishRejectsInjectionEpicID(t *testing.T) {
-	bad := []string{"weft-e & all()", "weft-e@origin", "a/b", "weft e", "weft-e:x"}
+	bad := []string{"weft-e & all()", "weft-e@origin", "a/b", "weft e", "weft-e:x", "..", "-rf", ".hidden"}
 	for _, epic := range bad {
 		for _, verb := range []string{"open", "reconcile"} {
 			r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{Code: 0} }}
