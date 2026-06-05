@@ -67,6 +67,20 @@ func TestBDInvokesRunnerWithNameAndArgs(t *testing.T) {
 	}
 }
 
+func TestGHInvokesRunnerWithNameAndArgs(t *testing.T) {
+	f := &fakeRunner{}
+	if _, err := GH(f, "pr", "view", "weft-x", "--json", "state"); err != nil {
+		t.Fatalf("GH: %v", err)
+	}
+	if f.name != "gh" {
+		t.Errorf("binary = %q, want gh", f.name)
+	}
+	want := []string{"pr", "view", "weft-x", "--json", "state"}
+	if !equal(f.args, want) {
+		t.Errorf("args = %v, want %v", f.args, want)
+	}
+}
+
 // resultRunner records the last call and returns a fixed Result.
 type resultRunner struct {
 	name string
