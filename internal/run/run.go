@@ -55,3 +55,9 @@ func JJ(r Runner, args ...string) (Result, error) {
 func BD(r Runner, args ...string) (Result, error) {
 	return r.Run("bd", args...)
 }
+
+// GH runs the GitHub CLI (introduced for the finish verbs: push/PR/merge-state).
+// Like bd/jj it is a deterministic CLI wrapper, not agent dispatch.
+func GH(r Runner, args ...string) (Result, error) {
+	return r.Run("gh", args...)
+}
