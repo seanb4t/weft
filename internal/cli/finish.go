@@ -131,10 +131,71 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_ = picks
-			_ = dryRun
-			_ = draft
-			return exit.Hardf("finish open happy path not yet implemented") // replaced in Task 4
+			title := fmt.Sprintf("%s (%s)", epic, epic) // title enrichment deferred to weft-hjx.9.7
+			body := assemblePRBody(epic, epic, picks)
+
+			if dryRun {
+				data := map[string]any{
+					"epic": epic, "bookmark": epic, "pushed": false,
+					"pr_url": "", "pr_exists": false, "picks": picks, "dry_run": true,
+				}
+				return Emit(cmd, "finish.open", data,
+					fmt.Sprintf("[dry-run] would push %s and open PR:\n%s", epic, body))
+			}
+
+			// Set the bookmark at the working-copy tip and push.
+			if res, err := run.JJ(a.Runner, "bookmark", "set", epic, "-r", "@"); err != nil {
+				return exit.Hardf("jj bookmark set could not run: %v", err)
+			} else if res.Code != 0 {
+				return exit.Hardf("jj bookmark set %s failed: %s", epic, strings.TrimSpace(res.Stderr))
+			}
+			if res, err := run.JJ(a.Runner, "git", "push", "-b", epic); err != nil {
+				return exit.Hardf("jj git push could not run: %v", err)
+			} else if res.Code != 0 {
+				return exit.Hardf("jj git push -b %s failed: %s", epic, strings.TrimSpace(res.Stderr))
+			}
+
+			// Idempotency (§4.3): if a PR already exists for the branch, re-push is
+			// done above; report the existing PR instead of opening a second.
+			if res, err := run.GH(a.Runner, "pr", "view", epic, "--json", "url"); err == nil && res.Code == 0 {
+				var existing struct {
+					URL string `json:"url"`
+				}
+				if json.Unmarshal([]byte(res.Stdout), &existing) == nil && existing.URL != "" {
+					data := map[string]any{
+						"epic": epic, "bookmark": epic, "pushed": true,
+						"pr_url": existing.URL, "pr_exists": true, "picks": picks, "dry_run": false,
+					}
+					return Emit(cmd, "finish.open", data,
+						fmt.Sprintf("re-pushed %s; PR already open: %s", epic, existing.URL))
+				}
+			}
+
+			// Assemble the body to a temp file (shell-arg limits; same idiom as
+			// plan emit's bd create --graph payload).
+			path, cleanup, err := writeTempPayload("weft-pr-body-*.md", []byte(body))
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			ghArgs := []string{"pr", "create", "--title", title, "--body-file", path, "--base", "main"}
+			if draft {
+				ghArgs = append(ghArgs, "--draft")
+			}
+			res, err := run.GH(a.Runner, ghArgs...)
+			if err != nil {
+				return exit.Hardf("gh pr create could not run: %v", err)
+			}
+			if res.Code != 0 {
+				return exit.Hardf("gh pr create failed: %s", strings.TrimSpace(res.Stderr))
+			}
+			prURL := strings.TrimSpace(res.Stdout)
+			data := map[string]any{
+				"epic": epic, "bookmark": epic, "pushed": true,
+				"pr_url": prURL, "pr_exists": false, "picks": picks, "dry_run": false,
+			}
+			return Emit(cmd, "finish.open", data, fmt.Sprintf("opened PR for %s: %s", epic, prURL))
 		},
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "emit the push plan + PR body + gh command without mutating")

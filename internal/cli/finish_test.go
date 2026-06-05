@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -154,5 +155,93 @@ func TestFinishOpenRefusesEmptyEpic(t *testing.T) {
 		if len(c) > 0 && (strings.Contains(strings.Join(c, " "), "git push") || strings.Contains(strings.Join(c, " "), "pr create")) {
 			t.Errorf("must not push/create PR for an empty epic: %v", c)
 		}
+	}
+}
+
+func TestFinishOpenDryRunMutatesNothing(t *testing.T) {
+	r := finishPreflightRunner(nil)
+	out, err := newTestCmd(r, "finish", "open", "weft-e", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "git push") || strings.Contains(j, "pr create") || strings.Contains(j, "bookmark set") {
+			t.Errorf("dry-run must not mutate; saw %v", c)
+		}
+	}
+	if !strings.Contains(out.String(), `"dry_run": true`) {
+		t.Errorf("dry-run envelope missing dry_run:true: %q", out.String())
+	}
+}
+
+func TestFinishOpenPushesAndCreatesPR(t *testing.T) {
+	r := finishPreflightRunner(func(j string) (run.Result, bool) {
+		if strings.Contains(j, "pr view weft-e") {
+			return run.Result{Code: 1, Stderr: "no pull requests found"}, true // no existing PR
+		}
+		if strings.Contains(j, "pr create") {
+			return run.Result{Stdout: "https://github.com/o/r/pull/42\n", Code: 0}, true
+		}
+		return run.Result{}, false
+	})
+	out, err := newTestCmd(r, "finish", "open", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	var sawSet, sawPush, sawCreate bool
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		sawSet = sawSet || strings.Contains(j, "bookmark set weft-e")
+		sawPush = sawPush || strings.Contains(j, "git push -b weft-e")
+		sawCreate = sawCreate || strings.Contains(j, "pr create")
+	}
+	if !sawSet || !sawPush || !sawCreate {
+		t.Fatalf("expected bookmark set + push + pr create; set=%v push=%v create=%v calls=%v", sawSet, sawPush, sawCreate, r.calls)
+	}
+	var env struct {
+		Data struct {
+			PRURL string       `json:"pr_url"`
+			Picks []finishPick `json:"picks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out.String()), &env); err != nil {
+		t.Fatalf("decode envelope: %v; out=%q", err, out.String())
+	}
+	if env.Data.PRURL != "https://github.com/o/r/pull/42" {
+		t.Errorf("pr_url = %q", env.Data.PRURL)
+	}
+	if len(env.Data.Picks) != 1 || env.Data.Picks[0].Change != "cha" {
+		t.Errorf("picks = %+v", env.Data.Picks)
+	}
+}
+
+func TestFinishOpenIdempotentWhenPRExists(t *testing.T) {
+	r := finishPreflightRunner(func(j string) (run.Result, bool) {
+		if strings.Contains(j, "pr view weft-e") {
+			return run.Result{Stdout: `{"url":"https://github.com/o/r/pull/7","state":"OPEN"}`, Code: 0}, true
+		}
+		return run.Result{}, false
+	})
+	out, err := newTestCmd(r, "finish", "open", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("open (existing PR): %v", err)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "pr create") {
+			t.Errorf("must NOT create a second PR when one exists: %v", c)
+		}
+	}
+	if !strings.Contains(out.String(), `"pr_exists": true`) || !strings.Contains(out.String(), "pull/7") {
+		t.Errorf("expected pr_exists:true + existing url: %q", out.String())
+	}
+}
+
+func TestFinishOpenDryRunPicksSerializeAsArray(t *testing.T) {
+	// One closed pick → picks is a populated []; assert it's a JSON array, not null.
+	r := finishPreflightRunner(nil)
+	out, _ := newTestCmd(r, "finish", "open", "weft-e", "--dry-run", "--json")
+	if !strings.Contains(out.String(), `"picks": [`) {
+		t.Errorf("picks must serialize as a JSON array: %q", out.String())
 	}
 }
