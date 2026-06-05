@@ -214,6 +214,12 @@ func TestReapEmptyArrayIsReaped(t *testing.T) {
 
 func TestReapRefusesPathTraversal(t *testing.T) {
 	root := t.TempDir()
+	// The worktrees root must exist so ContainsResolved resolves the parent and
+	// actually exercises the containment-escape (!safe) branch — not the
+	// parent-missing error branch, which would pass for the wrong reason.
+	if err := os.MkdirAll(root+"_worktrees", 0o755); err != nil {
+		t.Fatalf("mkdir wtRoot: %v", err)
+	}
 	// A workspace name that escapes the worktrees root via "..": the guard must
 	// hard-fail BEFORE any forget/RemoveAll, never deleting outside wtRoot.
 	fake := reapFake(root, "default\n../escape\n", map[string]run.Result{

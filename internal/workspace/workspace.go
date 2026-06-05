@@ -8,6 +8,8 @@
 package workspace
 
 import (
+	"errors"
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -85,4 +87,35 @@ func Contains(parent, child string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// ContainsResolved reports whether child, after resolving symlinks, is at or
+// inside parent (also symlink-resolved). Destructive verbs (ws forget, shed
+// cleanup, reap, conflict finalize) MUST use this instead of the lexical
+// Contains before os.RemoveAll, so a symlink planted at the expected path
+// cannot redirect the delete outside the worktrees root. If child does not
+// exist there is nothing to follow or delete, so it falls back to a lexical
+// check against the resolved parent (the subsequent RemoveAll is a no-op). Any
+// other resolution error is returned and callers MUST treat it as "refuse".
+func ContainsResolved(parent, child string) (bool, error) {
+	realParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return false, err
+	}
+	realChild, err := filepath.EvalSymlinks(child)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Child does not exist — nothing will be followed or deleted.
+			// Resolve as much as we can: evaluate the parent directory and
+			// re-attach the base name so the lexical check uses real paths.
+			resolvedDir, dirErr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(child)))
+			if dirErr != nil {
+				// Parent dir also doesn't exist; fall back to clean lexical child.
+				return Contains(realParent, filepath.Clean(child)), nil
+			}
+			return Contains(realParent, filepath.Join(resolvedDir, filepath.Base(child))), nil
+		}
+		return false, err
+	}
+	return Contains(realParent, realChild), nil
 }

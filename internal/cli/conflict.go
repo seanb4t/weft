@@ -197,7 +197,11 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 			// Defense-in-depth: ResolvePath always yields an in-root path, but guard
 			// against any future refactor that might produce an out-of-root path.
 			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
-			if !workspace.Contains(wtRoot, path) {
+			safe, err := workspace.ContainsResolved(wtRoot, path)
+			if err != nil {
+				return exit.Hardf("refusing to reap %q: cannot resolve path for containment check: %v", name, err)
+			}
+			if !safe {
 				return exit.Hardf("refusing to reap %q: resolves outside worktrees root %s", name, wtRoot)
 			}
 			if res, err := run.JJ(a.Runner, "workspace", "forget", name); err != nil {

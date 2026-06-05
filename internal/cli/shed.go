@@ -86,7 +86,11 @@ func (a *App) newShedCleanupCmd() *cobra.Command {
 				path := workspace.Path(root, a.Config.Workspace.Root, bead)
 				// Path-safety guard (spec §5): a bead-id carrying "/" or ".."
 				// must not let os.RemoveAll escape the worktrees root.
-				if !workspace.Contains(wtRoot, path) {
+				safe, err := workspace.ContainsResolved(wtRoot, path)
+				if err != nil {
+					return exit.Hardf("refusing to clean %q: cannot resolve path for containment check: %v", bead, err)
+				}
+				if !safe {
 					return exit.Hardf("refusing to clean %q: resolves outside worktrees root %s", bead, wtRoot)
 				}
 				if res, err := run.JJ(a.Runner, "workspace", "forget", name); err != nil {

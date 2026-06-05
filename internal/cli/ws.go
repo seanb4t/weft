@@ -78,6 +78,15 @@ func (a *App) newWsForgetCmd() *cobra.Command {
 				return err
 			}
 			name := workspace.Name(bead)
+			path := workspace.Path(root, a.Config.Workspace.Root, bead)
+			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
+			safe, err := workspace.ContainsResolved(wtRoot, path)
+			if err != nil {
+				return exit.Hardf("refusing to remove %q: cannot resolve path for containment check: %v", name, err)
+			}
+			if !safe {
+				return exit.Hardf("refusing to remove %q: resolves outside worktrees root %s", name, wtRoot)
+			}
 			res, err := run.JJ(a.Runner, "workspace", "forget", name)
 			if err != nil {
 				return exit.Hardf("jj workspace forget could not run: %v", err)
@@ -85,7 +94,6 @@ func (a *App) newWsForgetCmd() *cobra.Command {
 			if res.Code != 0 {
 				return exit.Hardf("jj workspace forget failed: %s", strings.TrimSpace(res.Stderr))
 			}
-			path := workspace.Path(root, a.Config.Workspace.Root, bead)
 			if err := os.RemoveAll(path); err != nil {
 				return exit.Hardf("rm workspace dir %s: %v", path, err)
 			}
