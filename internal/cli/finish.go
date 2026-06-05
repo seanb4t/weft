@@ -248,6 +248,27 @@ func mergeStyle(r run.Runner, epic string) (string, error) {
 	return "squash_or_rebase", nil
 }
 
+// deleteRemoteBranch removes the epic's remote branch via the GitHub API.
+// gh pr merge --delete-branch is unreliable (PR #18 evidence), so reconcile
+// deletes the ref directly. Best-effort and idempotent: an already-absent
+// branch (or unresolvable slug) yields false, not an error. Returns whether a
+// branch was actually deleted (spec §6.1.4).
+func deleteRemoteBranch(r run.Runner, epic string) bool {
+	res, err := run.GH(r, "repo", "view", "--json", "nameWithOwner")
+	if err != nil || res.Code != 0 {
+		return false
+	}
+	var v struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	}
+	if json.Unmarshal([]byte(res.Stdout), &v) != nil || v.NameWithOwner == "" {
+		return false
+	}
+	ref := fmt.Sprintf("repos/%s/git/refs/heads/%s", v.NameWithOwner, epic)
+	res, err = run.GH(r, "api", "-X", "DELETE", ref)
+	return err == nil && res.Code == 0
+}
+
 func (a *App) newFinishReconcileCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
@@ -316,10 +337,12 @@ func (a *App) newFinishReconcileCmd() *cobra.Command {
 			// cleanup: the error is intentionally discarded (no errcheck linter
 			// configured, so an explicit discard rather than a //nolint directive).
 			_, _ = run.JJ(a.Runner, "bookmark", "delete", epic)
+			// Delete the remote branch if the merge left it behind (§6.1.4).
+			remoteDeleted := deleteRemoteBranch(a.Runner, epic)
 			data := map[string]any{
 				"epic": epic, "merged": true, "merge_style": style,
 				"abandoned": abandoned, "bookmark_deleted": true,
-				"remote_branch_deleted": false, "dry_run": false,
+				"remote_branch_deleted": remoteDeleted, "dry_run": false,
 			}
 			return Emit(cmd, "finish.reconcile", data,
 				fmt.Sprintf("reconciled %s (%s): %d abandoned", epic, style, len(abandoned)))

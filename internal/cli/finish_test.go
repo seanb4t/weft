@@ -389,6 +389,34 @@ func TestFinishReconcileTrueMergeUsesRebase(t *testing.T) {
 	}
 }
 
+func TestFinishReconcileDeletesStaleRemoteBranch(t *testing.T) {
+	r := mergedReconcileRunner(false, func(j string) (run.Result, bool) {
+		if strings.Contains(j, "repo view") {
+			return run.Result{Stdout: `{"nameWithOwner":"o/r"}`, Code: 0}, true
+		}
+		if strings.Contains(j, "api -X DELETE repos/o/r/git/refs/heads/weft-e") {
+			return run.Result{Code: 0}, true
+		}
+		return run.Result{}, false
+	})
+	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--json")
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var sawDelete bool
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "api -X DELETE repos/o/r/git/refs/heads/weft-e") {
+			sawDelete = true
+		}
+	}
+	if !sawDelete {
+		t.Errorf("expected gh api DELETE of the remote ref; calls=%v", r.calls)
+	}
+	if !strings.Contains(out.String(), `"remote_branch_deleted": true`) {
+		t.Errorf("envelope must report remote_branch_deleted:true: %q", out.String())
+	}
+}
+
 func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
 	r := mergedReconcileRunner(false, nil)
 	out, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--dry-run", "--json")
@@ -397,7 +425,7 @@ func TestFinishReconcileDryRunMutatesNothing(t *testing.T) {
 	}
 	for _, c := range r.calls {
 		j := strings.Join(c, " ")
-		if strings.Contains(j, "new main") || strings.Contains(j, "abandon") || strings.Contains(j, "rebase") || strings.Contains(j, "bookmark delete") {
+		if strings.Contains(j, "new main") || strings.Contains(j, "abandon") || strings.Contains(j, "rebase") || strings.Contains(j, "bookmark delete") || strings.Contains(j, "api -X DELETE") {
 			t.Errorf("dry-run must not mutate; saw %v", c)
 		}
 	}
