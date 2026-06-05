@@ -177,6 +177,13 @@ squash-merge: `jj git fetch && jj rebase -b @ -o main --skip-emptied &&
 jj bookmark delete <epic>` (`-b @` explicit — never `-r @`, which truncates
 multi-pick chains).
 
+> **Refined by [seam 6](seams/06-finish-ship-verbs.md)** into the
+> `weft finish open|reconcile` verbs. Caveat to the line above: the
+> `jj rebase … --skip-emptied` cleanup conflicts on **squash-merges** (it
+> re-applies content already in `main`); seam 6's `reconcile` *detects* the
+> merge style and uses `jj new main` + `jj abandon` for squash/rebase-merges,
+> keeping the `rebase` path only for true-merges.
+
 ## 7. Engine: Go
 
 Decision: **the engine is a Go binary** — a deterministic helper that wraps
