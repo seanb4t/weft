@@ -42,7 +42,10 @@ jobs:
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         with:
           distribution: goreleaser
-          version: "~> v2"
+          # Exact pin (not the floating "~> v2" range): this step runs with
+          # contents:write via the app token, so the GoReleaser toolchain version
+          # is part of the supply chain. Bump deliberately (lockstep with ci.yml).
+          version: "2.16.0"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

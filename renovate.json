@@ -2,5 +2,18 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the @anthropic-ai/claude-code version pinned in the CI npm install (no package.json in this Go repo, so the github-actions manager can't see it).",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "npm install -g (?<depName>@anthropic-ai/claude-code)@(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "npm"
+    }
   ]
 }

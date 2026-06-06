@@ -32,4 +32,14 @@ tasks:
   release:preview:
     desc: Show the open release-please PR (or note none open)
     cmds:
-      - 'gh pr list --search "chore(main): release" --state open --json number,title || echo "no open release PR"'
+      # `set -e` so a non-zero gh exit (auth/network) propagates instead of being
+      # masked as "none": gh returns 0 with "[]" for a genuinely empty list, so
+      # the "no open release PR" message is gated on that empty result alone.
+      - |
+        set -e
+        prs=$(gh pr list --search "chore(main): release" --state open --json number,title)
+        if [ "$prs" = "[]" ]; then
+          echo "no open release PR"
+        else
+          echo "$prs"
+        fi

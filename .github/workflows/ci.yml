@@ -29,7 +29,11 @@ jobs:
       - uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         with:
           distribution: goreleaser
-          version: "~> v2"
+          # Exact pin (not the floating "~> v2" range), kept in lockstep with
+          # release.yml. This `check` step itself is read-only (contents:read);
+          # pinning here means CI validates the config against the exact GoReleaser
+          # version the release job ships with. Bump deliberately.
+          version: "2.16.0"
           args: check
 
   plugin-validate:

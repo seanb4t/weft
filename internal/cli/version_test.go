@@ -141,4 +141,17 @@ func TestResolveVersion(t *testing.T) {
 			}
 		})
 	}
+
+	// ReadBuildInfo can report ok=true with an empty Main.Version (binaries built
+	// outside a module context). The bi() helper above maps "" to ok=false, so it
+	// never reaches this branch — assert it explicitly: an empty version must fall
+	// through to the dev sentinel, not become a bare "" after TrimPrefix.
+	t.Run("build info ok but empty version", func(t *testing.T) {
+		okEmpty := func() (*debug.BuildInfo, bool) {
+			return &debug.BuildInfo{Main: debug.Module{Version: ""}}, true
+		}
+		if got := resolveVersion("", okEmpty); got != "0.0.0-dev" {
+			t.Errorf(`resolveVersion("", ok=true/empty version) = %q, want "0.0.0-dev"`, got)
+		}
+	})
 }
