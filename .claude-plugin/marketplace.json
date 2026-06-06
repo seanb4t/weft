@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "weft",
+  "description": "The Weft plugin marketplace.",
+  "owner": {
+    "name": "Weft Contributors",
+    "url": "https://github.com/seanb4t/weft"
+  },
+  "plugins": [
+    {
+      "name": "weft",
+      "source": "./plugin",
+      "description": "Spec-driven AI dev orchestration on jj + beads.",
+      "license": "Apache-2.0",
+      "category": "development",
+      "strict": true
+    }
+  ]
+}
