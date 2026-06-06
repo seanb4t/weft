@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Weft Contributors
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: weft
+    main: ./cmd/weft
+    binary: weft
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w -X github.com/seanb4t/weft/internal/cli.Version={{ .Version }}
+
+gomod:
+  proxy: true
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  # release-please creates the GitHub Release (changelog body); GoReleaser only
+  # uploads artifacts to that already-created, tag-keyed release. There is no
+  # `release.mode` field in GoReleaser v2 FOSS; replace_existing_artifacts makes
+  # re-runs idempotent.
+  replace_existing_artifacts: true
