@@ -18,3 +18,6 @@ func splitTrimLines(s string) []string {
 	}
 	return out
 }
+
+// joinLines renders a command list as newline-indented text for the next hint.
+func joinLines(xs []string) string { return strings.Join(xs, "\n  ") }

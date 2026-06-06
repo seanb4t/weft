@@ -16,6 +16,12 @@ import (
 // Emit renders a verb's result per the output contract (spec §3): --pick wins,
 // then --json, else the human text. It writes to the command's out stream.
 func Emit(cmd *cobra.Command, verb string, data any, text string) error {
+	return EmitNext(cmd, verb, data, text, "")
+}
+
+// EmitNext is like Emit but also sets the envelope's Next field (spec §3.1).
+// Pass an empty next to leave the field omitted.
+func EmitNext(cmd *cobra.Command, verb string, data any, text, next string) error {
 	jsonOut, err := cmd.Flags().GetBool("json")
 	if err != nil {
 		return exit.Hardf("flag lookup --json: %v", err)
@@ -25,6 +31,7 @@ func Emit(cmd *cobra.Command, verb string, data any, text string) error {
 		return exit.Hardf("flag lookup --pick: %v", err)
 	}
 	env := envelope.New(verb, data)
+	env.Next = next
 	out := cmd.OutOrStdout()
 
 	switch {

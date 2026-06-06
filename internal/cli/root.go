@@ -54,5 +54,6 @@ func NewRootCmd(app *App) *cobra.Command {
 	root.AddCommand(app.newPlanCmd())
 	root.AddCommand(app.newConflictCmd())
 	root.AddCommand(app.newFinishCmd())
+	root.AddCommand(app.newInstallCmd())
 	return root
 }
