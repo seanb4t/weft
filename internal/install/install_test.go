@@ -168,6 +168,101 @@ func TestInstallUninstallRunsUninstallOnly(t *testing.T) {
 	}
 }
 
+// TestInstallUninstallDryRunRunsNoSubprocess covers finding weft-i4r.3:
+// uninstall + dry-run must return the single uninstall command and run nothing.
+func TestInstallUninstallDryRunRunsNoSubprocess(t *testing.T) {
+	r := &scriptRunner{}
+	res, err := Install(r, Options{Version: "1.4.0", Scope: "user", Uninstall: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("uninstall dry-run: %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("uninstall dry-run must run no subprocess; saw %v", r.calls)
+	}
+	want := "claude plugin uninstall weft --scope user -y"
+	if len(res.Commands) != 1 || res.Commands[0] != want {
+		t.Errorf("Commands = %v; want [%q]", res.Commands, want)
+	}
+}
+
+// TestRegisterMarketplaceFallbackRemoveThenReAdd covers finding weft-i4r.2:
+// when the initial marketplace add returns Code!=0 the fallback must run
+// `plugin marketplace remove weft` and then re-run `plugin marketplace add`.
+func TestRegisterMarketplaceFallbackRemoveThenReAdd(t *testing.T) {
+	const addArg = "seanb4t/weft@weft--v1.4.0"
+	addKey := "claude plugin marketplace add " + addArg
+	removeKey := "claude plugin marketplace remove weft"
+
+	firstAdd := true
+	r := &scriptRunner{fn: func(j string) run.Result {
+		if strings.Contains(j, "--version") {
+			return run.Result{Code: 0, Stdout: "2.1.165"}
+		}
+		if strings.Contains(j, "plugin marketplace add "+addArg) {
+			if firstAdd {
+				firstAdd = false
+				return run.Result{Code: 1, Stderr: "marketplace: already registered"}
+			}
+			return run.Result{Code: 0} // re-add succeeds
+		}
+		return run.Result{Code: 0}
+	}}
+
+	_, err := Install(r, Options{Version: "1.4.0", Scope: "user"})
+	if err != nil {
+		t.Fatalf("install with fallback: %v", err)
+	}
+
+	// Collect the ordered marketplace-related calls.
+	var seq []string
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		switch {
+		case strings.Contains(j, "plugin marketplace add "+addArg):
+			seq = append(seq, addKey)
+		case strings.Contains(j, "plugin marketplace remove weft"):
+			seq = append(seq, removeKey)
+		}
+	}
+	// Must see: initial add, remove, re-add — in that order.
+	want := []string{addKey, removeKey, addKey}
+	if len(seq) != len(want) {
+		t.Fatalf("fallback sequence = %v; want %v", seq, want)
+	}
+	for i := range want {
+		if seq[i] != want[i] {
+			t.Errorf("seq[%d] = %q; want %q", i, seq[i], want[i])
+		}
+	}
+}
+
+// TestRegisterMarketplaceFallbackBothFailSurfacesOrigError covers finding
+// weft-i4r.2: when both the initial add AND the re-add fail, Install must
+// return a hard error (exit 2) that surfaces the ORIGINAL add error.
+func TestRegisterMarketplaceFallbackBothFailSurfacesOrigError(t *testing.T) {
+	const addArg = "seanb4t/weft@weft--v1.4.0"
+	const origMsg = "network: unreachable"
+
+	r := &scriptRunner{fn: func(j string) run.Result {
+		if strings.Contains(j, "--version") {
+			return run.Result{Code: 0, Stdout: "2.1.165"}
+		}
+		if strings.Contains(j, "plugin marketplace add "+addArg) {
+			// Both the first and second add fail.
+			return run.Result{Code: 1, Stderr: origMsg}
+		}
+		return run.Result{Code: 0}
+	}}
+
+	_, err := Install(r, Options{Version: "1.4.0", Scope: "user"})
+	if exit.Code(err) != 2 {
+		t.Fatalf("both-add-fail must be hard error (exit 2), got %v", err)
+	}
+	if !strings.Contains(err.Error(), origMsg) {
+		t.Errorf("error must surface the original add message %q; got %q", origMsg, err.Error())
+	}
+}
+
 // errRunner fails to start (simulates `claude` missing from PATH).
 type errRunner struct{}
 

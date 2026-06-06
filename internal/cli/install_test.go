@@ -74,13 +74,49 @@ func TestInstallRejectsInjectionRef(t *testing.T) {
 	}
 }
 
+// TestInstallEnvelopeCommandsNeverNull covers finding weft-i4r.7: the commands
+// field must serialize as a JSON array, never null. The check uses JSON
+// unmarshalling rather than a fragile substring match.
 func TestInstallEnvelopeCommandsNeverNull(t *testing.T) {
 	r := installRunner()
 	out, err := newTestCmd(r, "install", "--ref", "main", "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("dry-run: %v", err)
 	}
-	if !strings.Contains(out.String(), `"commands": [`) {
-		t.Errorf("commands must serialize as a JSON array, never null: %s", out.String())
+	// Unmarshal the top-level envelope and pull the raw "data" field.
+	var top struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &top); e != nil {
+		t.Fatalf("envelope unmarshal: %v\n%s", e, out.String())
+	}
+	// Pull the raw "commands" field out of data.
+	var data map[string]json.RawMessage
+	if e := json.Unmarshal(top.Data, &data); e != nil {
+		t.Fatalf("data unmarshal: %v\n%s", e, out.String())
+	}
+	raw, ok := data["commands"]
+	if !ok {
+		t.Fatalf("commands key missing from data: %s", out.String())
+	}
+	// A JSON array starts with '['; null serializes as the literal "null".
+	if len(raw) == 0 || raw[0] != '[' {
+		t.Errorf("commands must be a JSON array (not null or missing); got %s", raw)
+	}
+}
+
+// TestInstallDevBuildRefusalAtCLILayer covers finding weft-i4r.12: when
+// cli.Version is the dev sentinel "0.0.0-dev" and neither --ref nor --local is
+// provided, the install verb must exit 1 (invocation error) without running any
+// subprocess.
+func TestInstallDevBuildRefusalAtCLILayer(t *testing.T) {
+	r := installRunner()
+	// No --ref or --local; Version is "0.0.0-dev" (the test-time constant).
+	_, err := newTestCmd(r, "install")
+	if exit.Code(err) != 1 {
+		t.Errorf("dev-build with no --ref/--local must be exit 1, got %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("dev-build refusal must run no subprocess; saw %v", r.calls)
 	}
 }
