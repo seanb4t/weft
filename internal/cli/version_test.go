@@ -7,6 +7,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -112,5 +113,32 @@ func TestPickStringBoolAndNumber(t *testing.T) {
 		if got := pickString(tc.in); got != tc.want {
 			t.Errorf("pickString(%v) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestResolveVersion(t *testing.T) {
+	bi := func(v string) func() (*debug.BuildInfo, bool) {
+		return func() (*debug.BuildInfo, bool) {
+			if v == "" {
+				return nil, false
+			}
+			return &debug.BuildInfo{Main: debug.Module{Version: v}}, true
+		}
+	}
+	tests := []struct {
+		name, ldflags, buildInfo, want string
+	}{
+		{"ldflags clean", "0.1.0", "", "0.1.0"},
+		{"ldflags v-prefixed", "v0.1.0", "", "0.1.0"},
+		{"go install module version", "", "v0.2.0", "0.2.0"},
+		{"local devel placeholder", "", "(devel)", "0.0.0-dev"},
+		{"no build info", "", "", "0.0.0-dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveVersion(tt.ldflags, bi(tt.buildInfo)); got != tt.want {
+				t.Errorf("resolveVersion(%q, bi=%q) = %q, want %q", tt.ldflags, tt.buildInfo, got, tt.want)
+			}
+		})
 	}
 }
