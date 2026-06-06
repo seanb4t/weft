@@ -4,7 +4,7 @@
 # Pin binary and plugin versions in lockstep via the plugin tag
 
 **Date:** 2026-06-05
-**Status:** Accepted
+**Status:** Superseded by weft-1hf
 **Decision:** weft-1nt
 **Deciders:** Sean Brandt
 
@@ -32,3 +32,7 @@ Each release cuts two tags at the same version `X.Y.Z`: `vX.Y.Z` (cocogitto, bin
 - **Positive:** installed prompts are always authored against the running binary (no silent prompt/verb flag drift); the update story is deterministic — install the newer binary, run `weft install`, get the matched prompt version.
 - **Negative:** release requires two coordinated tags, and `plugin.json.version` must be bumped in the same release commit as the Go module version; dev/CI installs must always pass `--ref` or `--local` (a bare `weft install` is not usable in pre-release workflows).
 - **Neutral:** Claude Code's installed-plugin registry is the source of truth for what is installed; weft carries no hand-rolled install manifest.
+
+## References
+
+- Superseded by: weft-1hf
