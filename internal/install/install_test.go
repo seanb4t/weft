@@ -35,3 +35,39 @@ func TestValidateRefAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveSourceDefaultPinsPluginTag(t *testing.T) {
+	src, ref, err := resolveSource("1.4.0", "", "")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if src != "seanb4t/weft" || ref != "weft--v1.4.0" {
+		t.Errorf("default must pin seanb4t/weft@weft--v1.4.0, got %q@%q", src, ref)
+	}
+}
+
+func TestResolveSourceDevVersionRefuses(t *testing.T) {
+	if _, _, err := resolveSource("0.0.0-dev", "", ""); exit.Code(err) != 1 {
+		t.Errorf("dev/untagged version with no --ref/--local must refuse (exit 1), got %v", err)
+	}
+}
+
+func TestResolveSourceRefOverride(t *testing.T) {
+	src, ref, err := resolveSource("0.0.0-dev", "main", "")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if src != "seanb4t/weft" || ref != "main" {
+		t.Errorf("--ref must override to seanb4t/weft@main, got %q@%q", src, ref)
+	}
+}
+
+func TestResolveSourceLocalUsesPathNoRef(t *testing.T) {
+	src, ref, err := resolveSource("0.0.0-dev", "", "/tmp/weft-clone")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if src != "/tmp/weft-clone" || ref != "" {
+		t.Errorf("--local must use the path with no ref, got %q@%q", src, ref)
+	}
+}

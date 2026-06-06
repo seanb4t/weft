@@ -53,3 +53,29 @@ func validateLocal(path string) error {
 	}
 	return nil
 }
+
+const repoSlug = "seanb4t/weft"
+
+// semverPattern matches a clean release version X.Y.Z only (no pre-release or
+// build suffix). The dev sentinel "0.0.0-dev" — and any other suffixed build —
+// deliberately fails it, so the default pin path refuses to float; pre-release
+// or dev builds must pass --ref (or --local).
+var semverPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// resolveSource picks the marketplace source + ref. Precedence: --local (a clone
+// path, no ref) > --ref (override the ref on the repo) > default (pin the plugin
+// tag weft--v<version> for a released binary). A dev/untagged version with no
+// --ref/--local refuses rather than silently floating to a branch (spec §4.2).
+func resolveSource(version, ref, local string) (source, refArg string, err error) {
+	if local != "" {
+		return local, "", nil
+	}
+	if ref != "" {
+		return repoSlug, ref, nil
+	}
+	if !semverPattern.MatchString(version) {
+		return "", "", exit.Invocationf(
+			"weft %s is not a released build — pass --ref <git-ref> or --local <path> to install", version)
+	}
+	return repoSlug, "weft--v" + version, nil
+}
