@@ -61,3 +61,10 @@ func BD(r Runner, args ...string) (Result, error) {
 func GH(r Runner, args ...string) (Result, error) {
 	return r.Run("gh", args...)
 }
+
+// Claude runs the Claude Code CLI (introduced for `weft install`: it drives
+// `claude plugin marketplace add` / `install`). Like bd/jj/gh it is a
+// deterministic CLI wrapper, not agent dispatch.
+func Claude(r Runner, args ...string) (Result, error) {
+	return r.Run("claude", args...)
+}
