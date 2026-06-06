@@ -185,6 +185,27 @@ func TestInstallUninstallDryRunRunsNoSubprocess(t *testing.T) {
 	}
 }
 
+// TestInstallDefaultDryRunPinsMarketplaceAddString covers finding weft-9yy.4:
+// the default (install) dry-run must report Commands[0] as the marketplace-add
+// pinned to seanb4t/weft@v1.4.0 — a regression guard for the seam-8 weft--v -> v
+// tag change (the source@ref is "v<version>", not the old "weft--v<version>") —
+// and run no subprocess.
+func TestInstallDefaultDryRunPinsMarketplaceAddString(t *testing.T) {
+	r := &scriptRunner{}
+	res, err := Install(r, Options{Version: "1.4.0", Scope: "user", DryRun: true})
+	if err != nil {
+		t.Fatalf("default dry-run: %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("dry-run must run no subprocess; saw %v", r.calls)
+	}
+	wantAdd := "claude plugin marketplace add seanb4t/weft@v1.4.0"
+	wantInstall := "claude plugin install weft@weft --scope user"
+	if len(res.Commands) != 2 || res.Commands[0] != wantAdd || res.Commands[1] != wantInstall {
+		t.Errorf("Commands = %v; want [%q %q]", res.Commands, wantAdd, wantInstall)
+	}
+}
+
 // TestRegisterMarketplaceFallbackRemoveThenReAdd covers finding weft-i4r.2:
 // when the initial marketplace add returns Code!=0 the fallback must run
 // `plugin marketplace remove weft` and then re-run `plugin marketplace add`.
