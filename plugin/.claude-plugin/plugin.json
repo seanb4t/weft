@@ -1,11 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "weft",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Spec-driven AI dev orchestration on jj + beads — woven waves of ready picks.",
-  "author": { "name": "Weft Contributors" },
+  "author": {
+    "name": "Weft Contributors"
+  },
   "homepage": "https://github.com/seanb4t/weft",
   "repository": "https://github.com/seanb4t/weft",
   "license": "Apache-2.0",
-  "keywords": ["jj", "beads", "orchestration", "gsd"]
+  "keywords": [
+    "jj",
+    "beads",
+    "orchestration",
+    "gsd"
+  ]
 }
