@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Weft Contributors
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test ./...
+      - uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+  plugin-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20"
+      # claude.ai/install.sh returns HTTP 403 in CI behind Cloudflare
+      # (anthropics/claude-code#36306); the npm package is the CI-safe install.
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate ./plugin --strict
+      - run: claude plugin validate . --strict
+      # ${CLAUDE_PLUGIN_ROOT} discipline: no stale weft/ intra-tree paths in the
+      # installed plugin tree (the weft/ tree does not exist in the plugin cache).
+      - name: grep-discipline
+        run: |
+          if grep -RnE 'weft/(agents|references|workflows)/' plugin/; then
+            echo "::error::stale weft/ intra-tree path in plugin/ (use \${CLAUDE_PLUGIN_ROOT})"
+            exit 1
+          fi
+
+  commit-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
