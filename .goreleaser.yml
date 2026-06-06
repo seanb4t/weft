@@ -2,9 +2,9 @@
 # Copyright 2026 Weft Contributors
 version: 2
 
-before:
-  hooks:
-    - go mod tidy
+# No `before.hooks: [go mod tidy]` — release builds must use the exact tagged
+# go.mod/go.sum (tag = source of truth, ADR weft-19y). Tidiness is enforced in
+# CI (ci.yml test job: `go mod tidy` + `git diff --exit-code`), not mutated here.
 
 builds:
   - id: weft
