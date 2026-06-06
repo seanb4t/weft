@@ -37,13 +37,15 @@ func (a *App) newInstallCmd() *cobra.Command {
 				"dry_run": dryRun,
 			}
 			text := "installed weft plugin (" + res.Scope + ")"
+			next := "Restart Claude Code to load the weft plugin; try /weft:execute."
 			switch {
 			case dryRun:
 				text = "[dry-run] would run:\n  " + joinLines(res.Commands)
 			case uninstall:
 				text = "uninstalled weft plugin (" + res.Scope + ")"
+				next = "Restart Claude Code to unload the weft plugin."
 			}
-			return Emit(cmd, "install", data, text)
+			return EmitNext(cmd, "install", data, text, next)
 		},
 	}
 	c.Flags().StringVar(&scope, "scope", "user", "install scope: user | project | local")
