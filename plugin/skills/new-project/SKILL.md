@@ -105,7 +105,7 @@ not how the host wires it.
 The agent's sole output artifact is `warp-plan.json`. It applies
 Goal-Backward decomposition, vertical-slice bias, file-ownership dependency
 reasoning, wave thinking, and TDD-mode heuristics per its own methodology
-(see `weft/agents/weft-planner.md`).
+(see `${CLAUDE_PLUGIN_ROOT}/agents/planner.md`).
 
 ---
 

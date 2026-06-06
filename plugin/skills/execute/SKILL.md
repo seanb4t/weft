@@ -67,7 +67,7 @@ gate.
 
 Where deeper adversarial review is warranted (e.g., security-sensitive beads,
 or beads with acceptance criteria that require cross-file analysis), dispatch
-`weft-reviewer` (see `weft/agents/weft-reviewer.md`) fresh into the pick's
+`weft-reviewer` (see `${CLAUDE_PLUGIN_ROOT}/agents/reviewer.md`) fresh into the pick's
 workspace. The reviewer emits its verdict in the `pick.verify` envelope shape;
 the orchestrator reads `data.pass` the same way.
 
@@ -80,7 +80,7 @@ verdicts.
 
 Each pick receives its own fresh agent context. This is not optional:
 accumulated context from earlier picks contaminates reasoning about later ones.
-The executor (`weft/agents/weft-executor.md`) is dispatched one instance per
+The executor (`${CLAUDE_PLUGIN_ROOT}/agents/executor.md`) is dispatched one instance per
 pick, into that pick's isolated workspace, with the bead-id as its only
 cross-session anchor. The executor does not share state with sibling executors
 in the same wave.
@@ -88,7 +88,7 @@ in the same wave.
 The model used for each executor is determined by the bead's `model:*` label
 (the per-bead routing convention — see `${CLAUDE_PLUGIN_ROOT}/references/bead-change-spine.md`),
 falling back to the default declared in the agent's frontmatter (`sonnet` for
-`weft/agents/weft-executor.md`) when the bead carries no `model:*` label. The
+`${CLAUDE_PLUGIN_ROOT}/agents/executor.md`) when the bead carries no `model:*` label. The
 orchestrator reads the bead label before dispatch and routes accordingly.
 
 ---
@@ -126,7 +126,7 @@ fetch` once per wave before creating workspaces.
 ### Step 3 — Dispatch executors (parallel, one per pick)
 
 For each pick in the wave, dispatch a fresh `weft-executor` agent
-(`weft/agents/weft-executor.md`) into its isolated workspace. Executors run in
+(`${CLAUDE_PLUGIN_ROOT}/agents/executor.md`) into its isolated workspace. Executors run in
 parallel up to `shed.max`; each is independent. The executor:
 
 1. Reads the bead's description and acceptance criteria (`bd show <bead>`).
@@ -136,7 +136,7 @@ parallel up to `shed.max`; each is independent. The executor:
    sealed jj change with its `jj-change:<id>` spine label.
 
 If the executor returns a `checkpoint` (blocking deviation — see
-`weft/agents/weft-executor.md` §Checkpoint protocol), the orchestrator holds
+`${CLAUDE_PLUGIN_ROOT}/agents/executor.md` §Checkpoint protocol), the orchestrator holds
 that pick out of the integration step and routes accordingly (human decision or
 redo).
 
@@ -155,7 +155,7 @@ where the engine ran. Read `data.pass`:
   loop.
 
 Where the bead is flagged for deeper review (e.g., carries a `review:deep`
-label), dispatch `weft-reviewer` (`weft/agents/weft-reviewer.md`) into the
+label), dispatch `weft-reviewer` (`${CLAUDE_PLUGIN_ROOT}/agents/reviewer.md`) into the
 pick's workspace. The reviewer produces a `pick.verify`-shaped verdict; branch
 on its `data.pass` identically.
 
@@ -200,7 +200,7 @@ conflict state is a first-class jj object (seam 4); no intermediate tracking
 file is written.
 
 **b. Dispatch the resolver:**
-Dispatch `weft-resolver` (`weft/agents/weft-resolver.md`) fresh into the
+Dispatch `weft-resolver` (`${CLAUDE_PLUGIN_ROOT}/agents/resolver.md`) fresh into the
 resolution workspace. The resolver edits conflict markers directly (diff style,
 as pinned by `conflict open`), verifies the conflict count drops to zero via
 `jj --no-pager st`, and returns a structured result. The resolver does NOT

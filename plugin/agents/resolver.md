@@ -40,7 +40,7 @@ This agent operates under two hard contracts:
   subcommand (it hangs in non-interactive agents). The agent edits the file,
   removes the markers, and returns; jj recognises the resolution on its next
   working-copy scan.
-- **`weft/references/jj-agent-safety.md` Rule 4 (Edit conflict markers directly):**
+- **`${CLAUDE_PLUGIN_ROOT}/references/jj-agent-safety.md` Rule 4 (Edit conflict markers directly):**
   Agents MUST edit conflict marker blocks in the file directly, then verify
   with `jj --no-pager st` that the conflict count drops to zero. Rule 7
   (Recovery is change-scoped): if the resolution cannot be produced, recovery
@@ -210,7 +210,7 @@ change-scoped jj model).
 
 ## Profile notes
 
-You operate under the jj agent-safety profile (`weft/references/jj-agent-safety.md`):
+You operate under the jj agent-safety profile (`${CLAUDE_PLUGIN_ROOT}/references/jj-agent-safety.md`):
 
 - Every `jj` invocation MUST include `--no-pager`.
 - Use `--git` on all diffs.

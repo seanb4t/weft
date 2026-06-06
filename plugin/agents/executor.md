@@ -26,12 +26,12 @@ Execute the bead atomically:
 
 1. Read the bead's `description` — it is the plan. No external plan file is
    authorised as the canonical spec; the bead is the unit.
-2. Apply TDD discipline (see `weft/references/tdd-verify-discipline.md`).
+2. Apply TDD discipline (see `${CLAUDE_PLUGIN_ROOT}/references/tdd-verify-discipline.md`).
 3. Handle deviations with judgment (see [Deviation rules](#deviation-rules)).
 4. Verify the pick with `weft pick verify <bead>` — read `data.pass`, not exit
    code.
 5. Seal the pick with `weft pick seal <bead>` — commits the jj change and writes
-   the `jj-change:<id>` spine label (see `weft/references/bead-change-spine.md`).
+   the `jj-change:<id>` spine label (see `${CLAUDE_PLUGIN_ROOT}/references/bead-change-spine.md`).
 
 ## Context — what to read at startup
 
@@ -42,10 +42,10 @@ window; prefer targeted probe extractions over full-directory reads.
 |----------|--------|--------------|
 | 1 | `bd show <bead-id>` | description, acceptance criteria, labels, blockers |
 | 2 | Relevant source files (probe by symbol, not full dirs) | Current state of code under change |
-| 3 | `CLAUDE.md` / `weft/references/` | Project conventions; cite the refs you apply |
+| 3 | `CLAUDE.md` / `${CLAUDE_PLUGIN_ROOT}/references/` | Project conventions; cite the refs you apply |
 | 4 | Sibling beads' sealed changes (via `jj-change` label) | Dependency context only — read the diff, not full source |
 
-Do not read agent definition files (`.claude/`, `weft/agents/`) into your own
+Do not read agent definition files (`.claude/`, `${CLAUDE_PLUGIN_ROOT}/agents/`) into your own
 context; that is the orchestrator's responsibility. Keep your context budget for
 implementation.
 
@@ -63,13 +63,13 @@ jj --no-pager st        # confirm clean working copy at task start
 jj --no-pager log -r @  # confirm change-id is as expected
 ```
 
-See `weft/references/jj-agent-safety.md` for all jj invocation rules (always
+See `${CLAUDE_PLUGIN_ROOT}/references/jj-agent-safety.md` for all jj invocation rules (always
 `--no-pager`, reference change-ids not git SHAs, never `jj resolve`).
 
 ## TDD discipline
 
 Follow the red-green-refactor cycle defined in
-`weft/references/tdd-verify-discipline.md` whenever the bead has a clear
+`${CLAUDE_PLUGIN_ROOT}/references/tdd-verify-discipline.md` whenever the bead has a clear
 behavioral specification (i.e., you can write the test before writing the
 implementation).
 
@@ -89,7 +89,7 @@ The red→green→refactor phases are **editing phases inside the single working
 change** — they are not separate jj commits. The CLAUDE.md invariant is
 "pick — one woven change (one bead → one jj change)"; issuing intermediate
 `jj commit` calls would fork the spine and leave `weft pick seal`'s
-`jj-change:<id>` label ambiguous (see `weft/references/bead-change-spine.md`).
+`jj-change:<id>` label ambiguous (see `${CLAUDE_PLUGIN_ROOT}/references/bead-change-spine.md`).
 
 Instead:
 
@@ -103,10 +103,10 @@ Instead:
 4. **SEAL** — call `weft pick seal <bead>` exactly once. This produces the single
    sealed change with its conventional-commit message (`<type>(<bead-id>): <title>`)
    and writes the `jj-change:<id>` spine label
-   (see `weft/references/bead-change-spine.md`).
+   (see `${CLAUDE_PLUGIN_ROOT}/references/bead-change-spine.md`).
 
 Do not run intermediate `jj commit` between phases. Raw `jj commit` is outside
-the engine-verb boundary defined in `weft/references/jj-agent-safety.md` (§ engine
+the engine-verb boundary defined in `${CLAUDE_PLUGIN_ROOT}/references/jj-agent-safety.md` (§ engine
 verb / raw-jj exception). The per-phase discipline (RED before GREEN) is
 preserved; only the commit topology changes — one seal, not three.
 
@@ -194,7 +194,7 @@ weft pick seal <bead-id>
 
 `weft pick seal` performs the jj commit with a conventional-commit message, then
 writes the `jj-change:<id>` label back to the bead — the bead–change spine
-(see `weft/references/bead-change-spine.md`). The spine pins this bead to its
+(see `${CLAUDE_PLUGIN_ROOT}/references/bead-change-spine.md`). The spine pins this bead to its
 exact jj change-id, enabling subsequent verbs (`integrate`, `land`, `redo`) to
 locate the change without relying on ephemeral git SHAs.
 
@@ -254,5 +254,5 @@ responsibility after `weft pick land`.
 - **Seal writes the spine.** Only `weft pick seal` writes `jj-change:<id>`;
   never write this label manually.
 - **jj safety profile always applies.** See
-  `weft/references/jj-agent-safety.md`. Every jj invocation gets `--no-pager`;
+  `${CLAUDE_PLUGIN_ROOT}/references/jj-agent-safety.md`. Every jj invocation gets `--no-pager`;
   diffs get `--git`; change-ids, not git SHAs, are the canonical reference.

@@ -28,8 +28,8 @@ working-copy change** — they are NOT separate jj commits. The CLAUDE.md
 invariant is "pick — one woven change (one bead → one jj change)"; issuing
 intermediate `jj commit` calls between phases would fork the bead–change spine
 and leave `weft pick seal`'s `jj-change:<id>` label ambiguous (see
-`weft/agents/weft-executor.md` § "Commit sequence (TDD path)" and
-`weft/references/bead-change-spine.md`). jj auto-snapshots the working copy on
+`${CLAUDE_PLUGIN_ROOT}/agents/executor.md` § "Commit sequence (TDD path)" and
+`${CLAUDE_PLUGIN_ROOT}/references/bead-change-spine.md`). jj auto-snapshots the working copy on
 every save, so intermediate states are recoverable via `jj --no-pager evolog`
 without explicit per-phase commits.
 
