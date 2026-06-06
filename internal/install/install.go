@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/seanb4t/weft/internal/exit"
+	"github.com/seanb4t/weft/internal/run"
 )
 
 // validScopes are the Claude Code install scopes (claude plugin install --scope).
@@ -78,4 +79,126 @@ func resolveSource(version, ref, local string) (source, refArg string, err error
 			"weft %s is not a released build — pass --ref <git-ref> or --local <path> to install", version)
 	}
 	return repoSlug, "weft--v" + version, nil
+}
+
+// Options drives one weft install invocation.
+type Options struct {
+	Version   string // the binary's version (cli.Version); pins weft--v<Version>
+	Scope     string // user | project | local
+	Ref       string // optional ref override (branch/tag/sha)
+	Local     string // optional local clone path (marketplace source)
+	Uninstall bool   // remove instead of install
+	DryRun    bool   // report the commands without running them
+}
+
+// Result is the install outcome (becomes the envelope data).
+type Result struct {
+	Plugin      string
+	Marketplace string
+	Source      string
+	Ref         string
+	Scope       string
+	Uninstall   bool
+	Registered  bool
+	Installed   bool
+	Commands    []string
+}
+
+const pluginName = "weft"
+
+// Install validates options, ensures the claude CLI is reachable, then drives
+// `claude plugin` to register the marketplace and install (or uninstall) the
+// weft plugin. Best-effort nothing here: any non-zero claude exit is surfaced.
+func Install(r run.Runner, o Options) (Result, error) {
+	if err := validateScope(o.Scope); err != nil {
+		return Result{}, err
+	}
+	if o.Ref != "" {
+		if err := validateRef(o.Ref); err != nil {
+			return Result{}, err
+		}
+	}
+	if o.Local != "" {
+		if err := validateLocal(o.Local); err != nil {
+			return Result{}, err
+		}
+	}
+	res := Result{Plugin: pluginName, Marketplace: pluginName, Scope: o.Scope, Uninstall: o.Uninstall, Commands: []string{}}
+
+	if o.Uninstall {
+		res.Commands = []string{"claude plugin uninstall " + pluginName + " --scope " + o.Scope + " -y"}
+		if o.DryRun {
+			return res, nil
+		}
+		if err := claudeCheck(r); err != nil {
+			return res, err
+		}
+		if err := runClaude(r, "plugin", "uninstall", pluginName, "--scope", o.Scope, "-y"); err != nil {
+			return res, err
+		}
+		return res, nil
+	}
+
+	source, refArg, err := resolveSource(o.Version, o.Ref, o.Local)
+	if err != nil {
+		return Result{}, err
+	}
+	res.Source, res.Ref = source, refArg
+	addArg := source
+	if refArg != "" {
+		addArg = source + "@" + refArg
+	}
+	res.Commands = []string{
+		"claude plugin marketplace add " + addArg,
+		"claude plugin install " + pluginName + "@" + pluginName + " --scope " + o.Scope,
+	}
+	if o.DryRun {
+		return res, nil
+	}
+	if err := claudeCheck(r); err != nil {
+		return res, err
+	}
+	if err := registerMarketplace(r, addArg); err != nil {
+		return res, err
+	}
+	res.Registered = true
+	if err := runClaude(r, "plugin", "install", pluginName+"@"+pluginName, "--scope", o.Scope); err != nil {
+		return res, err
+	}
+	res.Installed = true
+	return res, nil
+}
+
+// claudeCheck probes that the claude CLI is reachable; a runner error means it is
+// not on PATH (a hard failure — the verb cannot proceed without the host CLI).
+func claudeCheck(r run.Runner) error {
+	if _, err := run.Claude(r, "--version"); err != nil {
+		return exit.Hardf("claude CLI not found on PATH — install Claude Code, or run the printed commands by hand: %v", err)
+	}
+	return nil
+}
+
+// runClaude runs one `claude plugin …` step, mapping both failure modes
+// (could-not-start, non-zero exit) to a hard error with the stderr surfaced.
+func runClaude(r run.Runner, args ...string) error {
+	res, err := run.Claude(r, args...)
+	if err != nil {
+		return exit.Hardf("claude %s could not run: %v", strings.Join(args, " "), err)
+	}
+	if res.Code != 0 {
+		return exit.Hardf("claude %s failed: %s", strings.Join(args, " "), strings.TrimSpace(res.Stderr))
+	}
+	return nil
+}
+
+// registerMarketplace adds the marketplace, tolerating an already-registered name
+// by removing and re-adding (the live CLI's duplicate-add semantic is unconfirmed
+// — spec §4.4; an integration test pins the real behavior).
+func registerMarketplace(r run.Runner, addArg string) error {
+	if res, err := run.Claude(r, "plugin", "marketplace", "add", addArg); err == nil && res.Code == 0 {
+		return nil
+	}
+	// Fallback: remove then re-add.
+	_, _ = run.Claude(r, "plugin", "marketplace", "remove", pluginName)
+	return runClaude(r, "plugin", "marketplace", "add", addArg)
 }
