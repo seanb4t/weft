@@ -50,6 +50,20 @@ func TestInstallDryRunRunsNoSubprocess(t *testing.T) {
 	}
 }
 
+// TestInstallDryRunOmitsRestartHint covers the Qodo PR #23 finding: a --dry-run
+// installs nothing, so the envelope's "next" must not carry the post-install
+// "Restart Claude Code to load" hint.
+func TestInstallDryRunOmitsRestartHint(t *testing.T) {
+	r := installRunner()
+	out, err := newTestCmd(r, "install", "--ref", "main", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if strings.Contains(out.String(), "Restart Claude Code to load") {
+		t.Errorf("dry-run must not emit the post-install restart hint: %s", out.String())
+	}
+}
+
 func TestInstallRejectsBadScope(t *testing.T) {
 	r := installRunner()
 	_, err := newTestCmd(r, "install", "--scope", "global")

@@ -241,7 +241,9 @@ func TestRegisterMarketplaceFallbackRemoveThenReAdd(t *testing.T) {
 // return a hard error (exit 2) that surfaces the ORIGINAL add error.
 func TestRegisterMarketplaceFallbackBothFailSurfacesOrigError(t *testing.T) {
 	const addArg = "seanb4t/weft@weft--v1.4.0"
-	const origMsg = "network: unreachable"
+	// Stderr marks an already-registered marketplace so the fallback (remove +
+	// re-add) is actually entered; both adds then fail.
+	const origMsg = "marketplace weft already registered"
 
 	r := &scriptRunner{fn: func(j string) run.Result {
 		if strings.Contains(j, "--version") {
@@ -260,6 +262,50 @@ func TestRegisterMarketplaceFallbackBothFailSurfacesOrigError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), origMsg) {
 		t.Errorf("error must surface the original add message %q; got %q", origMsg, err.Error())
+	}
+}
+
+// TestInstallNonDuplicateAddFailureDoesNotRemove covers the Qodo PR #23 finding:
+// a non-duplicate `marketplace add` failure (network/auth/invalid source) must
+// NOT trigger `marketplace remove weft` — removing it would delete a
+// previously-working registration. remove+re-add is reserved for the confirmed
+// already-registered case.
+func TestInstallNonDuplicateAddFailureDoesNotRemove(t *testing.T) {
+	r := &scriptRunner{fn: func(j string) run.Result {
+		if strings.Contains(j, "--version") {
+			return run.Result{Code: 0, Stdout: "2.1.165"}
+		}
+		if strings.Contains(j, "plugin marketplace add ") {
+			return run.Result{Code: 1, Stderr: "dial tcp: network is unreachable"}
+		}
+		return run.Result{Code: 0}
+	}}
+	_, err := Install(r, Options{Version: "1.4.0", Scope: "user"})
+	if exit.Code(err) != 2 {
+		t.Fatalf("a network add-failure must surface as hard error (exit 2), got %v", err)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c, " "), "plugin marketplace remove") {
+			t.Fatalf("must NOT remove the marketplace on a non-duplicate failure; calls=%v", r.calls)
+		}
+	}
+}
+
+// TestShellQuoteDryRunArgs covers the Qodo PR #23 finding: a --local path with
+// spaces must render as one shell-safe token in the dry-run Commands; clean refs
+// pass through unquoted.
+func TestShellQuoteDryRunArgs(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"seanb4t/weft@weft--v1.4.0", "seanb4t/weft@weft--v1.4.0"}, // clean → unquoted
+		{"/home/me/weft", "/home/me/weft"},                         // clean path → unquoted
+		{"/home/My Clone/weft", "'/home/My Clone/weft'"},           // space → single-quoted
+		{"a'b", `'a'\''b'`},                                        // embedded quote escaped
+		{"", "''"},                                                 // empty → ''
+	}
+	for _, c := range cases {
+		if got := shellQuote(c.in); got != c.want {
+			t.Errorf("shellQuote(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 

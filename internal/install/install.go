@@ -164,7 +164,7 @@ func Install(r run.Runner, o Options) (Result, error) {
 		addArg = source + "@" + refArg
 	}
 	res.Commands = []string{
-		"claude plugin marketplace add " + addArg,
+		"claude plugin marketplace add " + shellQuote(addArg),
 		"claude plugin install " + pluginName + "@" + pluginName + " --scope " + o.Scope,
 	}
 	if o.DryRun {
@@ -235,11 +235,47 @@ func registerMarketplace(r run.Runner, addArg string) error {
 		origErr = exit.Hardf("claude plugin marketplace add %s failed (original): stderr=%q stdout=%q",
 			addArg, strings.TrimSpace(res.Stderr), strings.TrimSpace(res.Stdout))
 	}
-	// Fallback: remove then re-add (duplicate-tolerance, spec §4.4).
+	// Remove+re-add is the repair ONLY for the already-registered case. A runner
+	// error (could not start) or any other failure — network, auth, invalid
+	// source — must NOT remove the marketplace: doing so would delete a
+	// previously-working registration and leave the user worse off than before
+	// running `weft install` (Qodo PR #23). Surface the original error untouched.
+	if err != nil || !isAlreadyRegistered(res.Stderr, res.Stdout) {
+		return origErr
+	}
+	// Duplicate-tolerance (spec §4.4): the name is already registered → remove
+	// and re-add to re-pin the source/ref.
 	_, _ = run.Claude(r, "plugin", "marketplace", "remove", pluginName)
 	if reAddErr := runClaude(r, "plugin", "marketplace", "add", addArg); reAddErr != nil {
 		// Re-add also failed — the original error is more informative.
 		return origErr
 	}
 	return nil
+}
+
+// shellQuote renders s as a single safe shell token for the dry-run Commands
+// display, so a --local path containing spaces (or other shell metacharacters)
+// copy/pastes as one argument instead of being re-split (Qodo PR #23). Clean
+// tokens (e.g. "seanb4t/weft@weft--v1.4.0") pass through unquoted; anything with
+// a metacharacter is single-quoted with embedded quotes escaped.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(s, " \t\n'\"\\$`*?(){}[]|&;<>#~!") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// isAlreadyRegistered reports whether a `marketplace add` failure indicates the
+// marketplace name is already registered — the only failure mode where the
+// remove+re-add repair is safe. Matched case-insensitively on claude's phrasing
+// ("already registered" / "already exists"); any non-match is treated as a
+// different failure (network/auth/invalid source) that must not trigger a
+// destructive remove (Qodo PR #23).
+func isAlreadyRegistered(stderr, stdout string) bool {
+	s := strings.ToLower(stderr + "\n" + stdout)
+	return strings.Contains(s, "already") &&
+		(strings.Contains(s, "regist") || strings.Contains(s, "exist"))
 }

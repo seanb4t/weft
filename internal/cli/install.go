@@ -41,6 +41,7 @@ func (a *App) newInstallCmd() *cobra.Command {
 			switch {
 			case dryRun:
 				text = "[dry-run] would run:\n  " + joinLines(res.Commands)
+				next = "" // dry-run installs nothing — no restart hint (Qodo PR #23)
 			case uninstall:
 				text = "uninstalled weft plugin (" + res.Scope + ")"
 				next = "Restart Claude Code to unload the weft plugin."
