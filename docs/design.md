@@ -216,9 +216,11 @@ Mirrors the holomush Go setup:
 - Apache-2.0 + SPDX headers (license-eye / `.licenserc.yaml`)
 - colocated jj + git
 - beads for issue tracking (dogfooded — Weft tracks its own development in beads)
-- cocogitto (`cog.toml`) tag-only releases; conventional commits enforced in CI
+- release-please (release-PR workflow) + GoReleaser for releases; conventional
+  commits enforced in CI (see `docs/seams/08-release-distribution-pipeline.md`)
 - `.editorconfig`; `cmd/<binary>/` + `internal/` layout; go 1.26
-- (deferred until build starts: Taskfile, `.golangci.yaml`, `.goreleaser.yaml`)
+- `Taskfile.yml` + `.goreleaser.yml` added in seam 8; `.golangci.yaml` still
+  deferred
 
 ## 9. Open seams (next design steps)
 
