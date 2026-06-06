@@ -72,8 +72,8 @@ const repoSlug = "seanb4t/weft"
 var semverPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // resolveSource picks the marketplace source + ref. Precedence: --local (a clone
-// path, no ref) > --ref (override the ref on the repo) > default (pin the plugin
-// tag weft--v<version> for a released binary). A dev/untagged version with no
+// path, no ref) > --ref (override the ref on the repo) > default (pin the binary's
+// release tag v<version> for a released binary). A dev/untagged version with no
 // --ref/--local refuses rather than silently floating to a branch (spec §4.2).
 // --ref and --local are mutually exclusive; Install enforces this before calling
 // resolveSource.
@@ -88,12 +88,12 @@ func resolveSource(version, ref, local string) (source, refArg string, err error
 		return "", "", exit.Invocationf(
 			"weft %s is not a released build — pass --ref <git-ref> or --local <path> to install", version)
 	}
-	return repoSlug, "weft--v" + version, nil
+	return repoSlug, "v" + version, nil
 }
 
 // Options drives one weft install invocation.
 type Options struct {
-	Version   string // the binary's version (cli.Version); pins weft--v<Version>
+	Version   string // the binary's version (cli.Version); pins v<Version>
 	Scope     string // user | project | local
 	Ref       string // optional ref override (branch/tag/sha); mutually exclusive with Local
 	Local     string // optional local clone path (marketplace source); mutually exclusive with Ref
@@ -256,7 +256,7 @@ func registerMarketplace(r run.Runner, addArg string) error {
 // shellQuote renders s as a single safe shell token for the dry-run Commands
 // display, so a --local path containing spaces (or other shell metacharacters)
 // copy/pastes as one argument instead of being re-split (Qodo PR #23). Clean
-// tokens (e.g. "seanb4t/weft@weft--v1.4.0") pass through unquoted; anything with
+// tokens (e.g. "seanb4t/weft@v1.4.0") pass through unquoted; anything with
 // a metacharacter is single-quoted with embedded quotes escaped.
 func shellQuote(s string) string {
 	if s == "" {

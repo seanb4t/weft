@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Weft Contributors
+version: "3"
+
+tasks:
+  build:
+    desc: Build the weft binary
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run the test suite
+    cmds:
+      - go test ./...
+
+  validate:
+    desc: Strict-validate the plugin and marketplace manifests
+    cmds:
+      - claude plugin validate ./plugin --strict
+      - claude plugin validate . --strict
+
+  snapshot:
+    desc: Build a local snapshot release (no publish)
+    cmds:
+      - goreleaser release --snapshot --clean
+
+  check:
+    desc: Validate the GoReleaser config
+    cmds:
+      - goreleaser check
+
+  release:preview:
+    desc: Show the open release-please PR (or note none open)
+    cmds:
+      - 'gh pr list --search "chore(main): release" --state open --json number,title || echo "no open release PR"'

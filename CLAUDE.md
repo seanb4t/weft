@@ -30,8 +30,11 @@ static binary, sits next to `bd` and `jj`).
 ## Conventions (mirrors holomush)
 
 - Go 1.26; `cmd/<binary>/` + `internal/` layout.
-- Conventional commits; cocogitto (`cog.toml`) tag-only releases; validated in
-  CI, not via local hooks (jj does not fire git hooks reliably).
+- Conventional commits; release-please maintains a release PR (bumps
+  `CHANGELOG.md` + `plugin/.claude-plugin/plugin.json`), merging it cuts the
+  `vX.Y.Z` tag and GitHub Release; GoReleaser builds the binary. Conventional
+  commits validated in CI, not via local hooks (jj does not fire git hooks
+  reliably).
 - `.editorconfig` is authoritative for formatting.
 
 ## Vocabulary

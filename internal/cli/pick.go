@@ -177,7 +177,7 @@ func (a *App) newPickSealCmd() *cobra.Command {
 // unicode.IsControl — C0 0x00–0x1F incl. \r \n \t, DEL 0x7F, and C1
 // 0x80–0x9F) is replaced by a single space, and the result is trimmed. This
 // prevents a multi-line or control-char bead title from breaking the commit
-// subject or cocogitto conventional-commit parsing.
+// subject or conventional-commit parsing.
 func sanitizeSubject(s string) string {
 	var b strings.Builder
 	inControl := false

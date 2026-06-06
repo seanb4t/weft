@@ -38,13 +38,13 @@ func TestValidateRefAllowlist(t *testing.T) {
 	}
 }
 
-func TestResolveSourceDefaultPinsPluginTag(t *testing.T) {
+func TestResolveSourceDefaultPinsReleaseTag(t *testing.T) {
 	src, ref, err := resolveSource("1.4.0", "", "")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if src != "seanb4t/weft" || ref != "weft--v1.4.0" {
-		t.Errorf("default must pin seanb4t/weft@weft--v1.4.0, got %q@%q", src, ref)
+	if src != "seanb4t/weft" || ref != "v1.4.0" {
+		t.Errorf("default must pin seanb4t/weft@v1.4.0, got %q@%q", src, ref)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestInstallDefaultDrivesMarketplaceThenInstall(t *testing.T) {
 	}
 	add, ins := -1, -1
 	for i, j := range joined {
-		if strings.Contains(j, "plugin marketplace add seanb4t/weft@weft--v1.4.0") {
+		if strings.Contains(j, "plugin marketplace add seanb4t/weft@v1.4.0") {
 			add = i
 		}
 		if strings.Contains(j, "plugin install weft@weft --scope user") {
@@ -189,7 +189,7 @@ func TestInstallUninstallDryRunRunsNoSubprocess(t *testing.T) {
 // when the initial marketplace add returns Code!=0 the fallback must run
 // `plugin marketplace remove weft` and then re-run `plugin marketplace add`.
 func TestRegisterMarketplaceFallbackRemoveThenReAdd(t *testing.T) {
-	const addArg = "seanb4t/weft@weft--v1.4.0"
+	const addArg = "seanb4t/weft@v1.4.0"
 	addKey := "claude plugin marketplace add " + addArg
 	removeKey := "claude plugin marketplace remove weft"
 
@@ -240,7 +240,7 @@ func TestRegisterMarketplaceFallbackRemoveThenReAdd(t *testing.T) {
 // weft-i4r.2: when both the initial add AND the re-add fail, Install must
 // return a hard error (exit 2) that surfaces the ORIGINAL add error.
 func TestRegisterMarketplaceFallbackBothFailSurfacesOrigError(t *testing.T) {
-	const addArg = "seanb4t/weft@weft--v1.4.0"
+	const addArg = "seanb4t/weft@v1.4.0"
 	// Stderr marks an already-registered marketplace so the fallback (remove +
 	// re-add) is actually entered; both adds then fail.
 	const origMsg = "marketplace weft already registered"
@@ -296,7 +296,7 @@ func TestInstallNonDuplicateAddFailureDoesNotRemove(t *testing.T) {
 // pass through unquoted.
 func TestShellQuoteDryRunArgs(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"seanb4t/weft@weft--v1.4.0", "seanb4t/weft@weft--v1.4.0"}, // clean → unquoted
+		{"seanb4t/weft@v1.4.0", "seanb4t/weft@v1.4.0"}, // clean → unquoted
 		{"/home/me/weft", "/home/me/weft"},                         // clean path → unquoted
 		{"/home/My Clone/weft", "'/home/My Clone/weft'"},           // space → single-quoted
 		{"a'b", `'a'\''b'`},                                        // embedded quote escaped
