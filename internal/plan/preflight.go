@@ -51,3 +51,32 @@ func ParsePreflight(stdout, stderr []byte) (Preflight, error) {
 		Drops:         drops,
 	}, nil
 }
+
+// ExpectedGraphSchemaVersion is the bd graph schema version this build was
+// grounded against. A mismatch is a soft signal to re-ground weft, not a stop.
+const ExpectedGraphSchemaVersion = 1
+
+// PreflightIssues categorizes a preflight against weft's expectations. Drops and
+// CountMismatch are hard (CountMismatch always; Drops unless the caller passes
+// --allow-drop); SchemaNote is always soft.
+type PreflightIssues struct {
+	Drops         []string // unknown-field drop warnings (verbatim)
+	CountMismatch string   // "" when node/edge counts match; else a description
+	SchemaNote    string   // "" when schema_version matches; else a soft note
+}
+
+// CheckPreflight compares a parsed preflight to the node/edge counts weft built.
+func CheckPreflight(pf Preflight, wantNodes, wantEdges int) PreflightIssues {
+	issues := PreflightIssues{Drops: pf.Drops}
+	if pf.NodeCount != wantNodes || pf.EdgeCount != wantEdges {
+		issues.CountMismatch = fmt.Sprintf(
+			"bd parsed %d node(s)/%d edge(s); weft built %d/%d (graph shape drift)",
+			pf.NodeCount, pf.EdgeCount, wantNodes, wantEdges)
+	}
+	if pf.SchemaVersion != ExpectedGraphSchemaVersion {
+		issues.SchemaNote = fmt.Sprintf(
+			"bd graph schema_version %d != expected %d — re-ground weft (proceeding)",
+			pf.SchemaVersion, ExpectedGraphSchemaVersion)
+	}
+	return issues
+}

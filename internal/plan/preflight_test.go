@@ -44,3 +44,38 @@ func TestParsePreflightBadStdoutErrors(t *testing.T) {
 		t.Error("unparseable stdout must return an error")
 	}
 }
+
+func TestCheckPreflightCleanIsAllZero(t *testing.T) {
+	pf := Preflight{NodeCount: 3, EdgeCount: 2, SchemaVersion: ExpectedGraphSchemaVersion, Drops: []string{}}
+	got := CheckPreflight(pf, 3, 2)
+	if len(got.Drops) != 0 || got.CountMismatch != "" || got.SchemaNote != "" {
+		t.Errorf("clean preflight must yield no issues, got %#v", got)
+	}
+}
+
+func TestCheckPreflightCountMismatch(t *testing.T) {
+	pf := Preflight{NodeCount: 2, EdgeCount: 2, SchemaVersion: ExpectedGraphSchemaVersion, Drops: []string{}}
+	got := CheckPreflight(pf, 3, 2) // want 3 nodes, bd saw 2
+	if got.CountMismatch == "" {
+		t.Error("node-count mismatch must be reported")
+	}
+}
+
+func TestCheckPreflightSchemaMismatchIsSoft(t *testing.T) {
+	pf := Preflight{NodeCount: 3, EdgeCount: 2, SchemaVersion: ExpectedGraphSchemaVersion + 99, Drops: []string{}}
+	got := CheckPreflight(pf, 3, 2)
+	if got.SchemaNote == "" {
+		t.Error("schema_version mismatch must produce a soft note")
+	}
+	if got.CountMismatch != "" {
+		t.Error("schema mismatch must NOT be a count error")
+	}
+}
+
+func TestCheckPreflightDropsPassThrough(t *testing.T) {
+	pf := Preflight{NodeCount: 3, EdgeCount: 2, SchemaVersion: ExpectedGraphSchemaVersion, Drops: []string{"warning: … unknown field(s): [x]"}}
+	got := CheckPreflight(pf, 3, 2)
+	if len(got.Drops) != 1 {
+		t.Errorf("drops must pass through for the caller's --allow-drop policy, got %#v", got.Drops)
+	}
+}
