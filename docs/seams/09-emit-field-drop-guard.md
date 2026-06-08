@@ -353,8 +353,10 @@ The re-plan (upsert) wet envelope now carries an additional field:
     the dry-run preflight (assert call order).
 - One **integration test** (build-tagged, real bd) asserting a representative
   `GraphJSON` produces zero `unknown field(s)` warnings and matching counts
-  against the live bd — the dev-time drift sentinel that catches a bd schema
-  change.
+  against the live bd — the drift sentinel that catches a bd schema change. CI
+  runs this automatically via the `integration` job in `.github/workflows/ci.yml`
+  (bd pinned at v1.0.5, checksum-verified; bump deliberately to re-validate
+  GraphJSON against the new bd schema).
 
 ## 9. Open sub-seams / follow-ups
 
