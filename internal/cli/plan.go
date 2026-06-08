@@ -56,7 +56,7 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 	return c
 }
 
-// planFirstEmit creates a brand-new warp via bd create --graph (spec §6),
+// planFirstEmit creates a brand-new warp via bd create --graph (spec §5),
 // gated by a bd-backed dry-run preflight that refuses to silently drop fields
 // (seam 9 / docs/seams/09-emit-field-drop-guard.md).
 func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, dryRun, allowDrop bool) error {
@@ -96,6 +96,7 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 		}
 		warnings = append(warnings, issues.Drops...)
 	}
+	warnings = append(warnings, pf.Notes...)
 	if issues.SchemaNote != "" {
 		warnings = append(warnings, issues.SchemaNote)
 	}
@@ -116,7 +117,7 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if res.Code != 0 {
 		return exit.Hardf("bd create --graph failed: %s", strings.TrimSpace(res.Stderr))
 	}
-	// Belt-and-suspenders: surface any warning the real create emits on success.
+	// Surface any warning the real create emits on success.
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
@@ -189,7 +190,7 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if err != nil {
 		return exit.Hardf("build re-plan payload: %v", err)
 	}
-	warnings := []string{}
+	warnings := []string{} // vacuously empty for dry-run (no bd call); present for envelope-shape stability
 	if dryRun {
 		data := map[string]any{
 			"dry_run": true, "mode": "upsert", "epic": epic,

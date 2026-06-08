@@ -28,14 +28,32 @@ func TestParsePreflightCountsAndDrops(t *testing.T) {
 	}
 }
 
-func TestParsePreflightCleanHasEmptyDrops(t *testing.T) {
+func TestParsePreflightCleanHasEmptyDropsAndNotes(t *testing.T) {
 	pf, err := ParsePreflight([]byte(sampleDryRunStdout), []byte(""))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// Must be a non-nil empty slice (JSON null breaks --json consumers).
+	// Must be non-nil empty slices (JSON null breaks --json consumers).
 	if pf.Drops == nil || len(pf.Drops) != 0 {
 		t.Errorf("clean stderr must yield empty (non-nil) Drops, got %#v", pf.Drops)
+	}
+	if pf.Notes == nil || len(pf.Notes) != 0 {
+		t.Errorf("clean stderr must yield empty (non-nil) Notes, got %#v", pf.Notes)
+	}
+}
+
+func TestParsePreflightMixedStderrSeparatesDropsAndNotes(t *testing.T) {
+	mixed := `warning: graph plan node["@epic"] has unknown field(s): [acceptance] (silently dropped — see 'bd create --graph' schema)
+warning: bd deprecation notice`
+	pf, err := ParsePreflight([]byte(sampleDryRunStdout), []byte(mixed))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(pf.Drops) != 1 {
+		t.Errorf("Drops = %v; want 1 drop line", pf.Drops)
+	}
+	if len(pf.Notes) != 1 {
+		t.Errorf("Notes = %v; want 1 note line", pf.Notes)
 	}
 }
 

@@ -21,6 +21,7 @@ type Preflight struct {
 	EdgeCount     int
 	SchemaVersion int
 	Drops         []string // verbatim bd warning lines naming dropped fields
+	Notes         []string // verbatim non-empty stderr lines that are NOT drop warnings
 }
 
 // dryRunEnvelope is the subset of bd's dry-run JSON weft reads.
@@ -38,10 +39,16 @@ func ParsePreflight(stdout, stderr []byte) (Preflight, error) {
 		return Preflight{}, fmt.Errorf("parse bd graph dry-run json: %w", err)
 	}
 	drops := []string{}
+	notes := []string{}
 	for _, line := range strings.Split(string(stderr), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" && strings.Contains(line, dropMarker) {
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, dropMarker) {
 			drops = append(drops, line)
+		} else {
+			notes = append(notes, line)
 		}
 	}
 	return Preflight{
@@ -49,6 +56,7 @@ func ParsePreflight(stdout, stderr []byte) (Preflight, error) {
 		EdgeCount:     env.EdgeCount,
 		SchemaVersion: env.SchemaVersion,
 		Drops:         drops,
+		Notes:         notes,
 	}, nil
 }
 
@@ -56,9 +64,10 @@ func ParsePreflight(stdout, stderr []byte) (Preflight, error) {
 // grounded against. A mismatch is a soft signal to re-ground weft, not a stop.
 const ExpectedGraphSchemaVersion = 1
 
-// PreflightIssues categorizes a preflight against weft's expectations. Drops and
-// CountMismatch are hard (CountMismatch always; Drops unless the caller passes
-// --allow-drop); SchemaNote is always soft.
+// PreflightIssues categorizes a preflight against weft's expectations. It is
+// data only; enforcement policy (what is hard vs soft) is the caller's
+// (planFirstEmit): CountMismatch and Drops are hard-enforced there, SchemaNote
+// is soft.
 type PreflightIssues struct {
 	Drops         []string // unknown-field drop warnings (verbatim)
 	CountMismatch string   // "" when node/edge counts match; else a description

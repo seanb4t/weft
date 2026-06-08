@@ -28,7 +28,7 @@ func writePlanFile(t *testing.T, body string) string {
 
 func TestPlanCheckValid(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"p1","title":"A","description":"do a"}]}`)
-	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{} }}
+	r := &routeRunner{fn: func(_ string, _ []string) run.Result { return run.Result{} }}
 	out, err := newTestCmd(r, "plan", "check", file, "--json")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -40,7 +40,7 @@ func TestPlanCheckValid(t *testing.T) {
 
 func TestPlanCheckInvalidStillExitsZero(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{},"picks":[]}`)
-	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{} }}
+	r := &routeRunner{fn: func(_ string, _ []string) run.Result { return run.Result{} }}
 	out, err := newTestCmd(r, "plan", "check", file, "--json")
 	if err != nil {
 		t.Fatalf("check must exit 0 even when invalid: %v", err)
@@ -50,7 +50,8 @@ func TestPlanCheckInvalidStillExitsZero(t *testing.T) {
 	}
 }
 
-// dryRunOK returns a scripted bd dry-run result with matching counts and no drops.
+// dryRunOK scripts bd's dry-run JSON envelope with the given node/edge counts
+// and a clean stderr (no drops, no notes), so the preflight passes cleanly.
 func dryRunOK(nodes, edges int) run.Result {
 	return run.Result{
 		Stdout: fmt.Sprintf(`{"dry_run":true,"node_count":%d,"edge_count":%d,"schema_version":1}`, nodes, edges),
@@ -111,11 +112,69 @@ func TestPlanEmitFirstCreatesGraph(t *testing.T) {
 	if !strings.Contains(out.String(), `"mode": "create"`) {
 		t.Errorf("expected mode:create, got %q", out.String())
 	}
+	saw := false
+	for _, c := range r.calls {
+		if isMutatingCreate(c) {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Errorf("first emit must run the real bd create --graph: %v", r.calls)
+	}
+}
+
+func TestPlanEmitPreflightExecErrorIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{errFn: func(_ string, _ []string) error { return fmt.Errorf("exec: bd not found") }}
+	if got := exit.Code(runRoot(r, "plan", "emit", file)); got != 2 {
+		t.Fatalf("preflight exec failure must be a hard error (exit 2), got %d", got)
+	}
+	for _, c := range r.calls {
+		if isMutatingCreate(c) {
+			t.Fatalf("must not mutate when preflight cannot run: %v", r.calls)
+		}
+	}
+}
+
+func TestPlanEmitPreflightNonZeroExitIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return run.Result{Code: 1, Stderr: "preflight boom"}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file)); got != 2 {
+		t.Fatalf("preflight non-zero exit must be a hard error (exit 2), got %d", got)
+	}
+	for _, c := range r.calls {
+		if isMutatingCreate(c) {
+			t.Fatalf("must not mutate after preflight failure: %v", r.calls)
+		}
+	}
+}
+
+func TestPlanEmitPreflightBadJSONIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return run.Result{Stdout: "not json", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file)); got != 2 {
+		t.Fatalf("preflight bad JSON must be a hard error (exit 2), got %d", got)
+	}
+	for _, c := range r.calls {
+		if isMutatingCreate(c) {
+			t.Fatalf("must not mutate after preflight parse failure: %v", r.calls)
+		}
+	}
 }
 
 func TestPlanEmitRefusesInvalidPlan(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{},"picks":[]}`)
-	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{} }}
+	r := &routeRunner{fn: func(_ string, _ []string) run.Result { return run.Result{} }}
 	if got := exit.Code(runRoot(r, "plan", "emit", file)); got != 1 {
 		t.Fatalf("emit must reject invalid plan with exit 1, got %d", got)
 	}
@@ -179,10 +238,10 @@ func TestPlanEmitCreateGraphNonZeroExitIsHard(t *testing.T) {
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.Contains(j, "--dry-run") {
-			return dryRunOK(2, 0) // preflight passes (nodes=2, edges=0)…
+			return dryRunOK(2, 0) // preflight passes so the real create is reached
 		}
 		if strings.Contains(j, "create --graph") {
-			return run.Result{Code: 1, Stderr: "create boom"} // …real create fails
+			return run.Result{Code: 1, Stderr: "create boom"}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -254,7 +313,7 @@ func TestPlanEmitReplanEmptyListCreatesAll(t *testing.T) {
 
 func TestPlanEmitRejectsDashEpic(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
-	r := &routeRunner{fn: func(string, []string) run.Result { return run.Result{} }}
+	r := &routeRunner{fn: func(_ string, _ []string) run.Result { return run.Result{} }}
 	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic=-x")); got != 1 {
 		t.Fatalf("flag-like --epic value must be an invocation error (exit 1), got %d", got)
 	}
@@ -346,6 +405,55 @@ func TestPlanEmitSchemaMismatchIsSoft(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "schema_version") {
 		t.Errorf("schema note must be surfaced: %q", out.String())
+	}
+}
+
+func TestPlanEmitDryRunDropWithAllowSurfacesWarning(t *testing.T) {
+	file := dropPlanFile(t)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return dryRunWithDrop()
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--dry-run", "--allow-drop", "--json")
+	if err != nil {
+		t.Fatalf("--dry-run --allow-drop must succeed: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "unknown field(s)") {
+		t.Errorf("drop warning must appear in dry-run output: %q", s)
+	}
+	if !strings.Contains(s, `"warnings"`) {
+		t.Errorf("warnings key must be present in dry-run envelope: %q", s)
+	}
+	for _, c := range r.calls {
+		if isMutatingCreate(c) {
+			t.Fatalf("dry-run must not mutate even with --allow-drop: %v", r.calls)
+		}
+	}
+}
+
+func TestPlanEmitPreflightNoteAppearsInWarnings(t *testing.T) {
+	// A non-drop stderr line (e.g. a deprecation notice) must be surfaced as a
+	// soft warning; it must not block the emit.
+	file := dropPlanFile(t)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return run.Result{
+				Stdout: `{"dry_run":true,"node_count":2,"edge_count":0,"schema_version":1}`,
+				Stderr: "warning: bd deprecation notice",
+				Code:   0,
+			}
+		}
+		return run.Result{Stdout: "created", Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--json")
+	if err != nil {
+		t.Fatalf("non-drop preflight note must not block emit: %v", err)
+	}
+	if !strings.Contains(out.String(), "bd deprecation notice") {
+		t.Errorf("preflight note must appear in warnings: %q", out.String())
 	}
 }
 
