@@ -241,34 +241,52 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	return Emit(cmd, "plan.emit", data, replanText(epic, rp, false))
 }
 
-// warpRefMap reads an epic's children and rebuilds the ref->bead map from their
-// weft-ref:<ref> labels (spec §3/§7) in a single bd list call.
-func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
+// warpChild is one `bd list --parent <epic> --json` record. It carries the
+// superset of fields the warp readers consume (warpRefMap needs id+status;
+// warpReadback needs title+priority+description); both always need labels.
+type warpChild struct {
+	ID          string   `json:"id"`
+	Status      string   `json:"status"`
+	Title       string   `json:"title"`
+	Priority    int      `json:"priority"`
+	Labels      []string `json:"labels"`
+	Description string   `json:"description"`
+}
+
+// warpScan reads an epic's children in one bd list call and rebuilds a ref->V
+// map by scanning each child's weft-ref:<ref> label (spec §3/§7), delegating the
+// per-bead value to build. errCtx prefixes the hard-error messages so each
+// caller keeps its own diagnostic phrasing. It is a free function, not a method,
+// because Go methods cannot carry type parameters.
+func warpScan[V any](a *App, epic, errCtx string, build func(warpChild) V) (map[string]V, error) {
 	res, err := run.BD(a.Runner, "list", "--parent", epic, "--json")
 	if err != nil {
-		return nil, exit.Hardf("bd list could not run: %v", err)
+		return nil, exit.Hardf("%s: bd list could not run: %v", errCtx, err)
 	}
 	if res.Code != 0 {
-		return nil, exit.Hardf("bd list failed: %s", strings.TrimSpace(res.Stderr))
+		return nil, exit.Hardf("%s: bd list failed: %s", errCtx, strings.TrimSpace(res.Stderr))
 	}
-	var arr []struct {
-		ID     string   `json:"id"`
-		Status string   `json:"status"`
-		Labels []string `json:"labels"`
-	}
+	var arr []warpChild
 	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
-		return nil, exit.Hardf("parse bd list json: %v", err)
+		return nil, exit.Hardf("%s: parse bd list json: %v", errCtx, err)
 	}
-	m := map[string]plan.ExistingBead{}
+	m := map[string]V{}
 	for _, it := range arr {
 		for _, l := range it.Labels {
 			if strings.HasPrefix(l, plan.RefLabelPrefix) {
-				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
-				m[ref] = plan.ExistingBead{ID: it.ID, Status: it.Status}
+				m[strings.TrimPrefix(l, plan.RefLabelPrefix)] = build(it)
 			}
 		}
 	}
 	return m, nil
+}
+
+// warpRefMap reads an epic's children and rebuilds the ref->bead map from their
+// weft-ref:<ref> labels (spec §3/§7) in a single bd list call.
+func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
+	return warpScan(a, epic, "warp ref map", func(it warpChild) plan.ExistingBead {
+		return plan.ExistingBead{ID: it.ID, Status: it.Status}
+	})
 }
 
 // warpReadback re-reads an epic's children after import and returns a map keyed
@@ -277,37 +295,14 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 // needs different fields (title, priority, description) than the pre-import
 // warpRefMap snapshot.
 func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
-	res, err := run.BD(a.Runner, "list", "--parent", epic, "--json")
-	if err != nil {
-		return nil, exit.Hardf("post-import read-back could not run: %v", err)
-	}
-	if res.Code != 0 {
-		return nil, exit.Hardf("post-import read-back: bd list failed: %s", strings.TrimSpace(res.Stderr))
-	}
-	var arr []struct {
-		Title       string   `json:"title"`
-		Priority    int      `json:"priority"`
-		Labels      []string `json:"labels"`
-		Description string   `json:"description"`
-	}
-	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
-		return nil, exit.Hardf("post-import read-back: parse bd list json: %v", err)
-	}
-	m := map[string]plan.ReadbackBead{}
-	for _, it := range arr {
-		for _, l := range it.Labels {
-			if strings.HasPrefix(l, plan.RefLabelPrefix) {
-				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
-				m[ref] = plan.ReadbackBead{
-					Title:       it.Title,
-					Priority:    it.Priority,
-					Labels:      it.Labels,
-					Description: it.Description,
-				}
-			}
+	return warpScan(a, epic, "post-import read-back", func(it warpChild) plan.ReadbackBead {
+		return plan.ReadbackBead{
+			Title:       it.Title,
+			Priority:    it.Priority,
+			Labels:      it.Labels,
+			Description: it.Description,
 		}
-	}
-	return m, nil
+	})
 }
 
 // replanText renders the re-plan summary, flagging the §8-deferred items.
