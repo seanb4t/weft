@@ -168,22 +168,45 @@ bead-id), rebasing each change onto the previous tip. Emits:
   "ok": true,
   "verb": "shed.integrate",
   "data": {
-    "stack": [{"bead": "...", "change": "..."}, ...]
-  },
-  "conflicts": [
-    {"bead": "...", "change": "...", "paths": ["..."], "lowest_ancestor": "..."}
-  ]
+    "stack": [{"bead": "...", "change": "..."}],
+    "conflicts": [{"bead": "...", "change": "..."}]
+  }
 }
 ```
 
-`conflicts` is DATA emitted at exit 0 — it is not an error. A conflict means
-the integration ran and detected a first-class jj conflict in the resulting
-change; the orchestrator consumes `conflicts[]` and routes to step 6 for each
-conflicted entry. Picks not in `conflicts[]` proceed directly to step 7.
+`data.conflicts` is DATA emitted at exit 0 — it is not an error. A conflict
+means the integration ran and detected a first-class jj conflict in the
+resulting change; the orchestrator consumes `data.conflicts` and routes to
+step 6 for each conflicted entry. Picks not in `data.conflicts` proceed
+directly to step 7.
+
+**Cascade semantics:** `weft shed integrate` stacks the wave linearly, so a
+first-class jj conflict in one change cascades to every change stacked above
+it — `data.conflicts` may therefore list cascade-conflicted descendants in
+addition to the picks that genuinely collided. The integrate-time snapshot is
+not the final work list.
 
 ### Step 6 — Resolve conflicts
 
-For each `{bead, change}` entry in `conflicts[]`:
+Work through `data.conflicts` iteratively, lowest-change-first. Do NOT resolve
+every Step-5 entry blindly in one pass — re-query after each finalize, because
+healing un-cascades: `conflict finalize` squashes the resolution into the
+conflicted ancestor and jj conflict-simplifies its descendants, so one heal can
+clear the cascade conflicts of everything above it. After each finalize,
+consult `data.remaining_conflicts` (and/or `weft resume`'s `data.conflicts`)
+for what is still conflicted, then resolve the next.
+
+**Escalation ordering:** `weft shed integrate` stacks the wave in lexicographic
+bead-id order — this is engine-fixed; the caller cannot choose stack position.
+A conflict (genuine or cascade) on a change leaves every change stacked above it
+conflicted until the lower one is resolved. Healing un-cascades: `weft conflict
+finalize` squashes the resolution into the conflicted ancestor and jj
+conflict-simplifies descendants, so resolving lowest-first clears cascades above
+it. An escalated change is never squashed, so it permanently cascade-conflicts
+every change lexicographically above it; those picks cannot land until a human
+resolves the escalation. That is the expected terminal state — `weft resume`
+surfaces the escalated pick (and anything stacked above it) as still conflicted
+and unlanded.
 
 **a. Open the conflict:**
 ```
@@ -207,10 +230,12 @@ weft conflict finalize <bead>
 ```
 Asserts only the resolution shows (via `jj diff --git`), squashes the resolution
 into the conflicted ancestor, re-queries `conflicts()`, and reaps the resolution
-workspace. Exits `0` with `{healed: [...], remaining_conflicts: [...]}` — result
-is DATA regardless of whether conflicts remain.
+workspace. Exits `0` with `data.{escalated, healed, remaining_conflicts}` —
+result is DATA regardless of remaining conflicts. `data.escalated` is `true`
+when the resolution is still conflicted (bead flagged `human`). Re-query
+`data.remaining_conflicts` (or `weft resume`) to determine what to resolve next.
 
-If `remaining_conflicts` is non-empty (resolver could not fully reconcile), the
+If `data.escalated` is `true` (resolver could not fully reconcile), the
 orchestrator escalates by adding the `human` label to the bead:
 
 ```
@@ -282,9 +307,10 @@ an empty wave. This occurs when:
 
 There is no explicit finish verb in this loop. Epic-level finishing (PR
 assembly, bookmark management) is a separate concern, outside the execute loop
-and not invoked here — it is deferred engine work, not yet part of the stable
-verb surface this workflow restricts itself to. The execute workflow's
-responsibility ends when the ready set is empty.
+and not invoked here. The execute loop terminates when the ready set is empty;
+finishing is a distinct operator step available as `weft finish open` (to push
+the epic's stack and open a GitHub PR) followed by `weft finish reconcile` after merge. The
+execute workflow's responsibility ends when the ready set is empty.
 
 ---
 
@@ -296,8 +322,9 @@ responsibility ends when the ready set is empty.
 | `weft pick verify` exits non-zero | Engine invocation failure | Abort; surface error to operator |
 | `data.pass: false` (after retries) | Pick cannot pass gate | Checkpoint — surface to human |
 | `shed integrate` exits non-zero | Integration engine failure | Abort; surface error; do not land any pick |
-| `conflicts[]` non-empty (exit 0) | First-class jj conflicts detected | Route to step 6 (conflict resolution) |
-| `remaining_conflicts` non-empty | Resolver could not reconcile | Add `human` label; skip landing for those picks |
+| `data.conflicts` non-empty (exit 0) | First-class jj conflicts detected | Route to step 6 (conflict resolution) |
+| `data.escalated: true` | Resolution workspace still conflicted | Add `human` label; skip landing for that pick |
+| `data.remaining_conflicts` non-empty | More conflicts remain in subtree | Continue iterative resolve loop — re-query and resolve the next; do NOT auto-escalate |
 | Executor returns `checkpoint` | Blocking deviation | Hold pick; route per checkpoint kind |
 | `shed isolate` partial failure | Some workspaces not created | Run `weft reap` to clean up; retry or redo affected picks |
 

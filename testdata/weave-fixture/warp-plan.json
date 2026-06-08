@@ -1,0 +1,15 @@
+{
+  "epic": {
+    "title": "Weave-loop E2E fixture",
+    "description": "Synthetic branch-coverage epic for the seam-10 weave-loop proof.",
+    "acceptance": "All non-escalated picks land; the escalated pick is flagged human and left unlanded (surfaced via conflicts)."
+  },
+  "picks": [
+    {"ref": "p1",  "title": "Clean pick",          "description": "lands directly", "labels": ["phase:impl"]},
+    {"ref": "p2a", "title": "Conflict-heal A",      "description": "collides on collide_h.txt", "labels": ["phase:impl"]},
+    {"ref": "p2b", "title": "Conflict-heal B",      "description": "collides on collide_h.txt", "labels": ["phase:impl"]},
+    {"ref": "p3",  "title": "Verify-fail then pass","description": "fails verify once, then passes", "labels": ["phase:impl"]},
+    {"ref": "p4a", "title": "Escalate A",           "description": "collides on collide_e.txt", "labels": ["phase:impl"]},
+    {"ref": "p4b", "title": "Escalate B",           "description": "collides on collide_e.txt", "labels": ["phase:impl"]}
+  ]
+}

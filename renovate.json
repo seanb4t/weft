@@ -27,6 +27,19 @@
       "depNameTemplate": "gastownhall/beads",
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the jj (jj-vcs/jj) release pinned as JJ_VERSION in the integration job so version rot / CVEs surface as Renovate PRs. JJ_SHA256 is intentionally not auto-bumped (hosted Renovate cannot recompute a tarball hash); the sha256sum -c check in the same step fails closed until the hash is recomputed for the new version.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "JJ_VERSION=(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "depNameTemplate": "jj-vcs/jj",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ]
 }
