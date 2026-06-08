@@ -40,14 +40,14 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 			}
 			d := plan.Derive(wp.Picks, a.Config.PlanStructural(), a.Config.PlanOverlapMax())
 			if epic != "" {
-				// Guard against a flag-like epic id being misparsed by bd's own
-				// argument parser when forwarded as a subprocess argument.
-				if strings.HasPrefix(epic, "-") {
-					return exit.Invocationf("invalid --epic value %q: must not start with '-'", epic)
+				// Standard epic-id allowlist guard (mirrors finish.go / the
+				// changeIDPattern revset-injection idiom): rejects leading dashes,
+				// revset metacharacters, and path-walk sequences before the value
+				// is forwarded to a subprocess or interpolated into a revset.
+				if err := validateEpicID(epic); err != nil {
+					return err
 				}
-				// --allow-drop is a first-emit-only preflight escape hatch; the bd
-				// import path used by --epic has no field-drop preflight, so the flag
-				// would be a silent no-op.
+				// --allow-drop is a first-emit-only flag; reject it early on the replan path.
 				if allowDrop {
 					return exit.Invocationf("--allow-drop is not supported with --epic (replan): the bd import path has no field-drop preflight, so the flag would be a silent no-op")
 				}
@@ -273,15 +273,16 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 
 // warpReadback re-reads an epic's children after import and returns a map keyed
 // by ref (from weft-ref:<ref> labels) suitable for VerifyReplan. It is a
-// separate reader from warpRefMap because it needs different fields (title,
-// priority, description) and must not alias the pre-import ExistingBead map.
+// separate reader from warpRefMap because it reads fresh post-import state and
+// needs different fields (title, priority, description) than the pre-import
+// warpRefMap snapshot.
 func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
 	res, err := run.BD(a.Runner, "list", "--parent", epic, "--json")
 	if err != nil {
 		return nil, exit.Hardf("post-import read-back could not run: %v", err)
 	}
 	if res.Code != 0 {
-		return nil, exit.Hardf("post-import read-back could not run: %s", strings.TrimSpace(res.Stderr))
+		return nil, exit.Hardf("post-import read-back: bd list failed: %s", strings.TrimSpace(res.Stderr))
 	}
 	var arr []struct {
 		Title       string   `json:"title"`

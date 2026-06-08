@@ -264,7 +264,8 @@ Re-plan (upsert) wet envelope example:
 ```
 
 Re-plan dry-run envelope example (`warnings` is always `[]` — no bd call
-precedes it on this path):
+precedes it on this path). Note: `verification` is intentionally absent here —
+dry-run does no import, so there is no read-back and no verification field.
 
 ```json
 {

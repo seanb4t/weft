@@ -283,6 +283,9 @@ func TestPlanEmitReplanListNonZeroExitIsHard(t *testing.T) {
 	}
 }
 
+// TestPlanEmitReplanMalformedListJSONIsHard covers the pre-import list parse
+// path (warpRefMap json.Unmarshal failure). The post-import read-back parse
+// path is covered by TestPlanReplanReadbackMalformedJSONIsHard.
 func TestPlanEmitReplanMalformedListJSONIsHard(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
 	r := &routeRunner{fn: func(name string, args []string) run.Result {

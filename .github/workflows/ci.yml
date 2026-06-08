@@ -71,6 +71,7 @@ jobs:
       # schema, which is the whole point of the sentinel.
       - name: Install bd (pinned, checksum-verified)
         run: |
+          set -euo pipefail
           BD_VERSION=1.0.5
           BD_SHA256=24706f65c7131c7b3261388709ae8781c8db53f0795398f67aa40538750aacf3
           url="https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz"
@@ -82,6 +83,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Integration tests (live bd drop-marker drift sentinel)
         run: |
+          set -euo pipefail
           bd --version
           WS="$(mktemp -d)"
           ( cd "$WS" && bd init --non-interactive -p weftci )
