@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,10 +87,15 @@ func TestReplanJSONLNoDrop(t *testing.T) {
 		t.Skip("bd not in PATH — skipping live-bd integration test")
 	}
 
-	// Hermetic bd DB: the real import below must never touch the CI job's shared
-	// workspace, so pin BEADS_DIR (overriding any ambient value) to a temp dir.
+	// The real import below must never touch the CI job's shared workspace, so
+	// pin BEADS_DIR to a temp dir. Strip any inherited BEADS_DIR first (the CI
+	// integration job sets one) so the override is unambiguous rather than
+	// relying on exec's last-duplicate-wins dedup.
 	dir := t.TempDir()
-	env := append(os.Environ(), "BEADS_DIR="+filepath.Join(dir, ".beads"))
+	env := append(
+		slices.DeleteFunc(os.Environ(), func(s string) bool { return strings.HasPrefix(s, "BEADS_DIR=") }),
+		"BEADS_DIR="+filepath.Join(dir, ".beads"),
+	)
 	runBD := func(args ...string) (string, string, error) {
 		cmd := exec.Command(bdPath, args...)
 		cmd.Dir = dir
@@ -111,8 +117,8 @@ func TestReplanJSONLNoDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Leg 1 (structural): bd accepts the payload and recognises every record. A
-	// schema change that rejects or skips records moves these counts.
+	// First, the structural check: bd accepts the payload and recognises every
+	// record. A schema change that rejects or skips records moves these counts.
 	stdout, stderr, err := runBD("import", "--dry-run", "--json", payload)
 	if err != nil {
 		t.Fatalf("bd import --dry-run failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
@@ -129,11 +135,11 @@ func TestReplanJSONLNoDrop(t *testing.T) {
 			summary.Created, summary.Skipped, len(wp.Picks), stdout)
 	}
 
-	// Leg 2 (field-level): import for real, then read the fields back through the
-	// same VerifyReplan the production replan runs. Keyed by the weft-ref label
-	// (labelsFor always injects it), so parent linkage — which bd import models as
-	// a parent-child dependency, not a payload field — is irrelevant here. Any
-	// dropped authored field surfaces as a discrepancy.
+	// Then the field-level check: import for real and read the fields back
+	// through the same VerifyReplan the production replan runs. Keyed by the
+	// weft-ref label (labelsFor always injects it), so parent linkage — which bd
+	// import models as a parent-child dependency, not a payload field — is
+	// irrelevant here. Any dropped authored field surfaces as a discrepancy.
 	if _, stderr, err := runBD("import", payload); err != nil {
 		t.Fatalf("bd import failed: %v\nstderr: %s", err, stderr)
 	}
@@ -141,12 +147,8 @@ func TestReplanJSONLNoDrop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bd list --json failed: %v\nstderr: %s", err, stderr)
 	}
-	var issues []struct {
-		Title       string   `json:"title"`
-		Priority    int      `json:"priority"`
-		Labels      []string `json:"labels"`
-		Description string   `json:"description"`
-	}
+	// ReadbackBead's json tags match the bd list output, so unmarshal directly.
+	var issues []plan.ReadbackBead
 	if err := json.Unmarshal([]byte(listOut), &issues); err != nil {
 		t.Fatalf("parse bd list --json: %v\noutput: %s", err, listOut)
 	}
@@ -154,12 +156,7 @@ func TestReplanJSONLNoDrop(t *testing.T) {
 	for _, is := range issues {
 		for _, l := range is.Labels {
 			if ref, ok := strings.CutPrefix(l, "weft-ref:"); ok {
-				readback[ref] = plan.ReadbackBead{
-					Title:       is.Title,
-					Priority:    is.Priority,
-					Labels:      is.Labels,
-					Description: is.Description,
-				}
+				readback[ref] = is
 			}
 		}
 	}

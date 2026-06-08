@@ -284,7 +284,7 @@ func warpScan[V any](a *App, epic, errCtx string, build func(warpChild) V) (map[
 // warpRefMap reads an epic's children and rebuilds the ref->bead map from their
 // weft-ref:<ref> labels (spec §3/§7) in a single bd list call.
 func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
-	return warpScan(a, epic, "warp ref map", func(it warpChild) plan.ExistingBead {
+	return warpScan(a, epic, "warp-ref-map", func(it warpChild) plan.ExistingBead {
 		return plan.ExistingBead{ID: it.ID, Status: it.Status}
 	})
 }
@@ -292,8 +292,8 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 // warpReadback re-reads an epic's children after import and returns a map keyed
 // by ref (from weft-ref:<ref> labels) suitable for VerifyReplan. It is a
 // separate reader from warpRefMap because it reads fresh post-import state and
-// needs different fields (title, priority, description) than the pre-import
-// warpRefMap snapshot.
+// needs different fields (title, priority, labels, description) than the
+// pre-import warpRefMap snapshot.
 func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
 	return warpScan(a, epic, "post-import read-back", func(it warpChild) plan.ReadbackBead {
 		return plan.ReadbackBead{

@@ -226,18 +226,12 @@ func TestReplanJSONLImmutable(t *testing.T) {
 }
 
 // TestImportRecordFieldsAccountedForInReplanExpect is a structural drift guard.
-//
-// BuildReplan hand-copies importRecord fields into ReplanExpect (the post-import
-// round-trip expectation) in its pick loop, with no compile-time linkage between
-// the two structs (PR #36 review weft-m7o.8). If importRecord grows a new authored
-// field that bd must persist, ReplanExpect/VerifyReplan can silently drift: the new
-// field would never be checked after import, so a bd drop of it goes undetected.
-//
-// This test enumerates importRecord's fields via reflection and requires each to be
-// explicitly classified below: either verified by ReplanExpect/VerifyReplan, or
-// waived with a documented reason. Adding (or removing) an importRecord field
-// without updating the map fails the test, forcing a conscious verify-or-waive
-// decision at the exact moment the drift would otherwise be introduced.
+// BuildReplan hand-copies importRecord fields into ReplanExpect with no
+// compile-time linkage, so a new authored importRecord field can silently escape
+// ReplanExpect/VerifyReplan and never be checked after import. This test
+// reflects over importRecord's fields and requires each to be classified below
+// as verified or waived-with-reason; adding or removing a field without updating
+// the map fails the test.
 func TestImportRecordFieldsAccountedForInReplanExpect(t *testing.T) {
 	// classification for every importRecord field.
 	//   verified=true  => the field round-trips and ReplanExpect+VerifyReplan check it.
@@ -260,7 +254,6 @@ func TestImportRecordFieldsAccountedForInReplanExpect(t *testing.T) {
 
 	rt := reflect.TypeOf(importRecord{})
 
-	// Forward: every importRecord field must be classified.
 	present := map[string]bool{}
 	for i := 0; i < rt.NumField(); i++ {
 		name := rt.Field(i).Name
@@ -272,16 +265,14 @@ func TestImportRecordFieldsAccountedForInReplanExpect(t *testing.T) {
 		}
 	}
 
-	// Reverse: no stale entries for fields that no longer exist.
 	for name := range accounted {
 		if !present[name] {
 			t.Errorf("drift guard classifies %q but importRecord has no such field; remove the stale entry", name)
 		}
 	}
 
-	// Sanity: the set of verified=true fields must equal the fields VerifyReplan
-	// actually inspects, so flipping a field's classification without wiring the
-	// check (or vice versa) is caught here too.
+	// The verified=true set must equal the fields VerifyReplan actually inspects,
+	// so flipping a classification without wiring the check (or vice versa) fails.
 	wantVerified := map[string]bool{"Title": true, "Description": true, "Priority": true, "Labels": true}
 	for name, fc := range accounted {
 		if fc.verified != wantVerified[name] {

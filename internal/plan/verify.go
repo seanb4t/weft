@@ -22,12 +22,13 @@ type ReplanExpect struct {
 }
 
 // ReadbackBead is one bead re-read after import, keyed for verification by
-// its weft-ref label.
+// its weft-ref label. The json tags match the `bd list --json` output keys so
+// callers can unmarshal directly into []ReadbackBead.
 type ReadbackBead struct {
-	Title       string
-	Priority    int
-	Labels      []string
-	Description string
+	Title       string   `json:"title"`
+	Priority    int      `json:"priority"`
+	Labels      []string `json:"labels"`
+	Description string   `json:"description"`
 }
 
 // VerifyReplan diffs intended import expectations against the beads bd actually
