@@ -45,6 +45,12 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 				if strings.HasPrefix(epic, "-") {
 					return exit.Invocationf("invalid --epic value %q: must not start with '-'", epic)
 				}
+				// --allow-drop is a first-emit-only preflight escape hatch; the bd
+				// import path used by --epic has no field-drop preflight, so the flag
+				// would be a silent no-op.
+				if allowDrop {
+					return exit.Invocationf("--allow-drop is not supported with --epic (replan): the bd import path has no field-drop preflight, so the flag would be a silent no-op")
+				}
 				return a.planReplan(cmd, wp, d, epic, dryRun)
 			}
 			return a.planFirstEmit(cmd, wp, d, dryRun, allowDrop)
@@ -52,7 +58,7 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "preview the warp without mutating beads")
 	c.Flags().StringVar(&epic, "epic", "", "existing epic id to re-plan against (bd import upsert)")
-	c.Flags().BoolVar(&allowDrop, "allow-drop", false, "proceed despite bd dropping unknown graph fields (loud, opt-in)")
+	c.Flags().BoolVar(&allowDrop, "allow-drop", false, "proceed despite bd dropping unknown graph fields (loud, opt-in; first emit only; not valid with --epic)")
 	return c
 }
 

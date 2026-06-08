@@ -150,7 +150,7 @@ the epic comes off the loom and is finished out into the world.
 |---|---|
 | *(none)* | First emit: bd-backed preflight (`bd create --graph --dry-run --json`) runs before the real create; hard-fails (exit 2) if bd would silently drop any graph field or if node/edge counts mismatch. |
 | `--dry-run` | bd-backed dry run: runs the preflight and folds its warnings + counts + `schema_version` into the envelope — no mutation follows. Exit code follows the strictness matrix below. |
-| `--allow-drop` | Downgrades a *drop warning* to a surfaced entry in `data.warnings` and proceeds. Does **not** bypass a count mismatch (count mismatch is always hard). Forward-compat escape hatch; never the default. |
+| `--allow-drop` | Downgrades a *drop warning* to a surfaced entry in `data.warnings` and proceeds. Does **not** bypass a count mismatch (count mismatch is always hard). Forward-compat escape hatch; never the default. **First emit only** — rejected as an invocation error (exit 1) when combined with `--epic`; the bd import path has no field-drop preflight, so the flag would be a silent no-op there. |
 | `--epic <id>` | Re-plan against an existing epic (`bd import` upsert). |
 
 **Exit-2 contract (seam 9 §4):**

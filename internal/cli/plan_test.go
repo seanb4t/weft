@@ -457,6 +457,19 @@ func TestPlanEmitPreflightNoteAppearsInWarnings(t *testing.T) {
 	}
 }
 
+func TestPlanEmitAllowDropWithEpicIsInvocationError(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, _ []string) run.Result { return run.Result{} }}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e", "--allow-drop")
+	if got := exit.Code(err); got != 1 {
+		t.Fatalf("--allow-drop with --epic must be an invocation error (exit 1), got %d (err=%v)", got, err)
+	}
+	// Guard must fire before any runner call — no bd list/import must be attempted.
+	if len(r.calls) != 0 {
+		t.Fatalf("guard must short-circuit before any runner call; got calls: %v", r.calls)
+	}
+}
+
 func TestPlanReplanSurfacesImportStderr(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
