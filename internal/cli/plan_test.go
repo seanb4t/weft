@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -185,7 +186,9 @@ func TestPlanEmitReplanUpsertsMatchedRef(t *testing.T) {
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		if strings.Contains(j, "bd list --parent weft-hjx.9") {
-			return run.Result{Stdout: `[{"id":"weft-hjx.9.1","status":"open","labels":["weft-ref:a"]}]`, Code: 0}
+			// Serve the full record for both pre-import ref-map and post-import
+			// read-back: include title/priority/description so verification passes.
+			return run.Result{Stdout: `[{"id":"weft-hjx.9.1","status":"open","title":"A2","priority":2,"labels":["weft-ref:a"],"description":"updated"}]`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -296,9 +299,15 @@ func TestPlanEmitReplanMalformedListJSONIsHard(t *testing.T) {
 func TestPlanEmitReplanEmptyListCreatesAll(t *testing.T) {
 	// An epic with no existing children: every pick is a create, import runs cleanly.
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	listCount := 0
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
-			return run.Result{Stdout: `[]`, Code: 0}
+			listCount++
+			if listCount == 1 {
+				return run.Result{Stdout: `[]`, Code: 0} // pre-import: no existing picks
+			}
+			// Post-import read-back: the newly created pick is present.
+			return run.Result{Stdout: `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -472,10 +481,15 @@ func TestPlanEmitAllowDropWithEpicIsInvocationError(t *testing.T) {
 
 func TestPlanReplanSurfacesImportStderr(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	// After import, a second bd list --parent is made for read-back.
+	// Both list calls return the same result here: the read-back just needs the
+	// pick present with the authored label so verification passes.
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.HasPrefix(j, "list --parent") {
-			return run.Result{Stdout: "[]", Code: 0} // no existing children
+			// Serve a consistent record for both pre-import ref-map and post-import
+			// read-back. The pick "a" is present with its weft-ref label.
+			return run.Result{Stdout: `[{"id":"weft-abc.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`, Code: 0}
 		}
 		if strings.HasPrefix(j, "import") {
 			return run.Result{Stdout: "imported 1", Stderr: "warning: something bd noticed", Code: 0}
@@ -491,5 +505,137 @@ func TestPlanReplanSurfacesImportStderr(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"warnings"`) {
 		t.Errorf("warnings key must be present in envelope: %q", out.String())
+	}
+}
+
+// TestPlanReplanReadbackFailIsHard — post-import bd list returns non-zero → hard exit 2.
+func TestPlanReplanReadbackFailIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	listCount := 0
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			listCount++
+			if listCount == 1 {
+				// First call: pre-import ref resolution (no existing picks).
+				return run.Result{Stdout: `[]`, Code: 0}
+			}
+			// Second call: post-import read-back fails.
+			return run.Result{Code: 1, Stderr: "bd list read-back boom"}
+		}
+		if strings.HasPrefix(j, "import") {
+			return run.Result{Stdout: "imported 1", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "e")); got != 2 {
+		t.Fatalf("post-import read-back failure must be a hard error (exit 2), got %d", got)
+	}
+}
+
+// TestPlanReplanReadbackDropIsHard — read-back finds an authored label missing → hard exit 2.
+func TestPlanReplanReadbackDropIsHard(t *testing.T) {
+	// Plan has a pick with an authored label "phase:alpha" that bd drops.
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a","labels":["phase:alpha"]}]}`)
+	listCount := 0
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			listCount++
+			if listCount == 1 {
+				return run.Result{Stdout: `[]`, Code: 0}
+			}
+			// Read-back: "phase:alpha" is absent — simulates bd dropping the label.
+			return run.Result{
+				Stdout: `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`,
+				Code:   0,
+			}
+		}
+		if strings.HasPrefix(j, "import") {
+			return run.Result{Stdout: "imported 1", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("read-back label drop must be a hard error (exit 2), got %d (err=%v)", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "round-trip") {
+		t.Errorf("error must mention round-trip discrepancy, got: %v", err)
+	}
+}
+
+// TestPlanReplanReadbackHappyPath — all fields match; exit 0 with verification marker.
+func TestPlanReplanReadbackHappyPath(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	listCount := 0
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			listCount++
+			if listCount == 1 {
+				return run.Result{Stdout: `[]`, Code: 0}
+			}
+			// Read-back: all authored fields present.
+			return run.Result{
+				Stdout: `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`,
+				Code:   0,
+			}
+		}
+		if strings.HasPrefix(j, "import") {
+			return run.Result{Stdout: "imported 1", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "e", "--json")
+	if err != nil {
+		t.Fatalf("happy replan read-back must succeed: %v", err)
+	}
+	// Unmarshal into a struct that captures data.verification specifically.
+	// Using *[]string distinguishes null (nil pointer) from empty array (non-nil,
+	// length 0). The field must be non-nil (never JSON null) and empty on a clean
+	// round-trip, per the output-contract convention.
+	var env struct {
+		Data struct {
+			Verification *[]string `json:"verification"`
+		} `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("envelope unmarshal: %v\n%s", e, out.String())
+	}
+	if env.Data.Verification == nil {
+		t.Errorf("verification must be non-null array, got null: %s", out.String())
+	} else if len(*env.Data.Verification) != 0 {
+		t.Errorf("verification must be empty on clean round-trip, got %v: %s", *env.Data.Verification, out.String())
+	}
+}
+
+// TestPlanReplanReadbackMalformedJSONIsHard covers the warpReadback json.Unmarshal
+// error branch: the pre-import list call returns valid JSON (so ref resolution and
+// replan build succeed), bd import succeeds, but the post-import list call (the
+// read-back, i.e. the second list call) returns malformed JSON. The command must
+// exit 2 (hard error).
+func TestPlanReplanReadbackMalformedJSONIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	listCount := 0
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			listCount++
+			if listCount == 1 {
+				// Pre-import list: valid JSON so ref resolution succeeds.
+				return run.Result{Stdout: `[]`, Code: 0}
+			}
+			// Read-back (second call): malformed JSON triggers json.Unmarshal error.
+			return run.Result{Stdout: `not valid json {{{`, Code: 0}
+		}
+		if strings.HasPrefix(j, "import") {
+			return run.Result{Stdout: "imported 1", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("malformed read-back JSON must be a hard error (exit 2), got %d (err=%v)", got, err)
 	}
 }

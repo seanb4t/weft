@@ -151,18 +151,21 @@ the epic comes off the loom and is finished out into the world.
 | *(none)* | First emit: bd-backed preflight (`bd create --graph --dry-run --json`) runs before the real create; hard-fails (exit 2) if bd would silently drop any graph field or if node/edge counts mismatch. |
 | `--dry-run` | bd-backed dry run: runs the preflight and folds its warnings + counts + `schema_version` into the envelope — no mutation follows. Exit code follows the strictness matrix below. |
 | `--allow-drop` | Downgrades a *drop warning* to a surfaced entry in `data.warnings` and proceeds. Does **not** bypass a count mismatch (count mismatch is always hard). Forward-compat escape hatch; never the default. **First emit only** — rejected as an invocation error (exit 1) when combined with `--epic`; the bd import path has no field-drop preflight, so the flag would be a silent no-op there. |
-| `--epic <id>` | Re-plan against an existing epic (`bd import` upsert). |
+| `--epic <id>` | Re-plan against an existing epic (`bd import` upsert). After import succeeds, weft re-reads the epic's children via `bd list` and verifies that every authored field (title, priority, labels, description presence) round-tripped. Any discrepancy is a hard exit 2 (seam 9 §7). |
 
-**Exit-2 contract (seam 9 §4):**
+**Exit-2 contract (seam 9 §4 and §7):**
 
-`weft plan emit` may exit 2 in two distinct cases — both are data-integrity failures, not invocation errors:
+`weft plan emit` may exit 2 in three distinct cases — all are data-integrity failures, not invocation errors:
 
-1. **Field drop:** the bd preflight stderr contains `unknown field(s)` — a field weft sent would be silently lost. Surfaced verbatim. Downgrade with `--allow-drop`.
-2. **Count mismatch:** `node_count` or `edge_count` in the preflight envelope does not match what weft built (`1 + len(picks)` nodes, `len(derivation.Edges)` edges). Always hard; `--allow-drop` does not bypass it.
+1. **Field drop (first emit):** the bd preflight stderr contains `unknown field(s)` — a field weft sent would be silently lost. Surfaced verbatim. Downgrade with `--allow-drop`.
+2. **Count mismatch (first emit):** `node_count` or `edge_count` in the preflight envelope does not match what weft built (`1 + len(picks)` nodes, `len(derivation.Edges)` edges). Always hard; `--allow-drop` does not bypass it.
+3. **Read-back mismatch (re-plan):** after `bd import` succeeds, a post-import `bd list` read-back reveals that one or more authored fields (title, priority, label, description) did not persist. The error lists each discrepancy. Cannot be bypassed.
 
 A `schema_version` difference between weft's `ExpectedGraphSchemaVersion` and the bd preflight's reported value is a **soft warning** only — it appears in `data.warnings` but does not block the emit.
 
 **`data.warnings`** is `[]string`, never null (empty on a clean emit). Any surfaced bd warning or `schema_version` mismatch note appears here.
+
+**`data.verification`** (re-plan path only) is `[]string`, never null. Empty on a clean round-trip; populated with discrepancy strings when verification detects a drop (though in that case exit 2 fires before the success envelope is emitted).
 
 ### 4.6 `weft resume --epic E` — read-only projection
 

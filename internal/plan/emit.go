@@ -139,11 +139,12 @@ type importDep struct {
 
 // Replan is the computed re-plan delta against an existing warp (spec §7).
 type Replan struct {
-	jsonl         []byte   // bd import payload (one record per pick, newline-delimited)
-	Created       []string // refs with no existing bead (created by import, fields + parent only)
-	Updated       []string // refs matched to an existing bead (fields/labels/edges updated)
-	DeferredEdges []Edge   // edges touching a not-yet-created pick (wired post-import — §8)
-	Removed       []string // refs present in the warp but absent from the plan (supersede is §8)
+	jsonl         []byte         // bd import payload (one record per pick, newline-delimited)
+	Created       []string       // refs with no existing bead (created by import, fields + parent only)
+	Updated       []string       // refs matched to an existing bead (fields/labels/edges updated)
+	DeferredEdges []Edge         // edges touching a not-yet-created pick (wired post-import — §8)
+	Removed       []string       // refs present in the warp but absent from the plan (supersede is §8)
+	Expect        []ReplanExpect // authored expectations for post-import read-back verification (never nil)
 }
 
 // JSONL returns a defensive copy of the bd import wire payload so callers
@@ -161,7 +162,7 @@ func (r Replan) JSONL() []byte {
 // BOTH endpoints already have ids; edges touching a newly created pick are
 // reported as DeferredEdges (their bead-id does not exist until import runs).
 func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]ExistingBead) (Replan, error) {
-	rp := Replan{Created: []string{}, Updated: []string{}, DeferredEdges: []Edge{}, Removed: []string{}}
+	rp := Replan{Created: []string{}, Updated: []string{}, DeferredEdges: []Edge{}, Removed: []string{}, Expect: []ReplanExpect{}}
 
 	// Group resolvable edges (both endpoints matched) by dependent ref.
 	depsByRef := map[string][]importDep{}
@@ -206,6 +207,13 @@ func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]Exi
 		if err := enc.Encode(rec); err != nil {
 			return Replan{}, err
 		}
+		rp.Expect = append(rp.Expect, ReplanExpect{
+			Ref:      pk.Ref,
+			Title:    rec.Title,
+			Priority: rec.Priority,
+			Labels:   rec.Labels,
+			HasDesc:  strings.TrimSpace(rec.Description) != "",
+		})
 	}
 	rp.jsonl = buf.Bytes()
 

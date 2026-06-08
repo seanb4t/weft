@@ -221,11 +221,22 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
+	// Post-import read-back: re-read the epic's children and verify that every
+	// authored field round-tripped through bd import (seam 9 §7).
+	readback, err := a.warpReadback(epic)
+	if err != nil {
+		return err
+	}
+	if disc := plan.VerifyReplan(rp.Expect, readback); len(disc) > 0 {
+		return exit.Hardf("plan emit replan applied but %d authored field(s) did not round-trip (bd dropped them); the warp is incomplete — investigate:\n%s",
+			len(disc), strings.Join(disc, "\n"))
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
 		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
+		"verification": []string{},
 	}
 	return Emit(cmd, "plan.emit", data, replanText(epic, rp, false))
 }
@@ -254,6 +265,44 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 			if strings.HasPrefix(l, plan.RefLabelPrefix) {
 				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
 				m[ref] = plan.ExistingBead{ID: it.ID, Status: it.Status}
+			}
+		}
+	}
+	return m, nil
+}
+
+// warpReadback re-reads an epic's children after import and returns a map keyed
+// by ref (from weft-ref:<ref> labels) suitable for VerifyReplan. It is a
+// separate reader from warpRefMap because it needs different fields (title,
+// priority, description) and must not alias the pre-import ExistingBead map.
+func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
+	res, err := run.BD(a.Runner, "list", "--parent", epic, "--json")
+	if err != nil {
+		return nil, exit.Hardf("post-import read-back could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("post-import read-back could not run: %s", strings.TrimSpace(res.Stderr))
+	}
+	var arr []struct {
+		Title       string   `json:"title"`
+		Priority    int      `json:"priority"`
+		Labels      []string `json:"labels"`
+		Description string   `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
+		return nil, exit.Hardf("post-import read-back: parse bd list json: %v", err)
+	}
+	m := map[string]plan.ReadbackBead{}
+	for _, it := range arr {
+		for _, l := range it.Labels {
+			if strings.HasPrefix(l, plan.RefLabelPrefix) {
+				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
+				m[ref] = plan.ReadbackBead{
+					Title:       it.Title,
+					Priority:    it.Priority,
+					Labels:      it.Labels,
+					Description: it.Description,
+				}
 			}
 		}
 	}
