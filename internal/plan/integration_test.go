@@ -8,9 +8,11 @@ package plan_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,5 +55,112 @@ func TestGraphJSONNoDrop(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "unknown field(s)") {
 		t.Fatalf("live bd dropped fields from GraphJSON output:\n%s", stderr.String())
+	}
+}
+
+// TestReplanJSONLNoDrop is the drift sentinel for the bd IMPORT payload schema —
+// the sibling of TestGraphJSONNoDrop, which only guards the bd create --graph
+// path. BuildReplan emits the replan upsert JSONL (importRecord) that planReplan
+// feeds to `bd import`; a bd schema change on the import endpoint would silently
+// drop authored fields and surface only at replan runtime. Crucially, bd import
+// (unlike create --graph) emits NO "unknown field(s)" warning, so a stderr scan
+// cannot detect a drop. This guard therefore imports into a throwaway DB and
+// reads the fields back through VerifyReplan — the exact check planReplan runs
+// live. Run with: go test -tags integration ./internal/plan/.
+func TestReplanJSONLNoDrop(t *testing.T) {
+	pr1, pr2 := 1, 2
+	wp := plan.WarpPlan{
+		Epic: plan.Epic{Title: "E", Description: "d", Acceptance: "AC"},
+		Picks: []plan.Pick{
+			{Ref: "a", Title: "Pick A", Description: "desc a", Labels: []string{"phase:impl"}, Priority: &pr1},
+			{Ref: "b", Title: "Pick B", Labels: []string{"phase:test"}, Priority: &pr2},
+		},
+	}
+	// Create path (refToID nil): every pick is a new bead, so created == len(picks).
+	rp, err := plan.BuildReplan(wp, plan.Derive(wp.Picks, nil, 1), "e", nil)
+	if err != nil {
+		t.Fatalf("BuildReplan: %v", err)
+	}
+
+	bdPath, err := exec.LookPath("bd")
+	if err != nil {
+		t.Skip("bd not in PATH — skipping live-bd integration test")
+	}
+
+	// The real import below must never touch the CI job's shared workspace, so
+	// pin BEADS_DIR to a temp dir. Strip any inherited BEADS_DIR first (the CI
+	// integration job sets one) so the override is unambiguous rather than
+	// relying on exec's last-duplicate-wins dedup.
+	dir := t.TempDir()
+	env := append(
+		slices.DeleteFunc(os.Environ(), func(s string) bool { return strings.HasPrefix(s, "BEADS_DIR=") }),
+		"BEADS_DIR="+filepath.Join(dir, ".beads"),
+	)
+	runBD := func(args ...string) (string, string, error) {
+		cmd := exec.Command(bdPath, args...)
+		cmd.Dir = dir
+		cmd.Env = env
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		runErr := cmd.Run()
+		return stdout.String(), stderr.String(), runErr
+	}
+
+	if _, stderr, err := runBD("init", "--non-interactive", "-p", "weftimp"); err != nil {
+		t.Fatalf("bd init: %v\nstderr: %s", err, stderr)
+	}
+
+	payload := filepath.Join(dir, "replan.jsonl")
+	// 0o600 matches writeTempPayload in internal/cli/plan.go: the payload carries
+	// pick titles/descriptions and the temp dir is world-readable.
+	if err := os.WriteFile(payload, rp.JSONL(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// First, the structural check: bd accepts the payload and recognises every
+	// record. A schema change that rejects or skips records moves these counts.
+	stdout, stderr, err := runBD("import", "--dry-run", "--json", payload)
+	if err != nil {
+		t.Fatalf("bd import --dry-run failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	var summary struct {
+		Created int `json:"created"`
+		Skipped int `json:"skipped"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &summary); err != nil {
+		t.Fatalf("parse bd import --dry-run --json: %v\nstdout: %s", err, stdout)
+	}
+	if summary.Created != len(wp.Picks) || summary.Skipped != 0 {
+		t.Fatalf("bd import dry-run drift: created=%d skipped=%d, want created=%d skipped=0\nstdout: %s",
+			summary.Created, summary.Skipped, len(wp.Picks), stdout)
+	}
+
+	// Then the field-level check: import for real and read the fields back
+	// through the same VerifyReplan the production replan runs. Keyed by the
+	// weft-ref label (labelsFor always injects it), so parent linkage — which bd
+	// import models as a parent-child dependency, not a payload field — is
+	// irrelevant here. Any dropped authored field surfaces as a discrepancy.
+	if _, stderr, err := runBD("import", payload); err != nil {
+		t.Fatalf("bd import failed: %v\nstderr: %s", err, stderr)
+	}
+	listOut, stderr, err := runBD("list", "--json")
+	if err != nil {
+		t.Fatalf("bd list --json failed: %v\nstderr: %s", err, stderr)
+	}
+	// ReadbackBead's json tags match the bd list output, so unmarshal directly.
+	var issues []plan.ReadbackBead
+	if err := json.Unmarshal([]byte(listOut), &issues); err != nil {
+		t.Fatalf("parse bd list --json: %v\noutput: %s", err, listOut)
+	}
+	readback := map[string]plan.ReadbackBead{}
+	for _, is := range issues {
+		for _, l := range is.Labels {
+			if ref, ok := strings.CutPrefix(l, "weft-ref:"); ok {
+				readback[ref] = is
+			}
+		}
+	}
+	if disc := plan.VerifyReplan(rp.Expect, readback); len(disc) > 0 {
+		t.Fatalf("live bd dropped authored field(s) from the import payload:\n%s", strings.Join(disc, "\n"))
 	}
 }

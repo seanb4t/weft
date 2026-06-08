@@ -68,11 +68,17 @@ jobs:
       # Exact pin (v1.0.5): the integration test is the drift sentinel for
       # weft's GraphJSON payload against the live bd graph schema. Bump
       # deliberately — bumping re-validates GraphJSON against the new bd
-      # schema, which is the whole point of the sentinel.
+      # schema, which is the whole point of the sentinel. Renovate tracks
+      # BD_VERSION (github-releases customManager in renovate.json) and opens
+      # a bump PR when a newer bd release ships.
       - name: Install bd (pinned, checksum-verified)
         run: |
           set -euo pipefail
           BD_VERSION=1.0.5
+          # BD_SHA256 is the linux_amd64 tarball hash for the pinned BD_VERSION.
+          # Renovate bumps BD_VERSION but cannot recompute this hash, so on any
+          # bump recompute it — the sha256sum -c check below fails closed until
+          # then:  curl -fsSL "$url" | sha256sum
           BD_SHA256=24706f65c7131c7b3261388709ae8781c8db53f0795398f67aa40538750aacf3
           url="https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz"
           curl -fsSL -o bd.tar.gz "$url"

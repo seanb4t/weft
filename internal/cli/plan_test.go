@@ -283,6 +283,17 @@ func TestPlanEmitReplanListNonZeroExitIsHard(t *testing.T) {
 	}
 }
 
+// warpScan's runner-cannot-start branch (run.BD returns an error, e.g. bd not on
+// PATH) on the pre-import ref-map list call → hard exit 2. The sibling
+// non-zero-exit and malformed-JSON branches are covered above and below.
+func TestPlanEmitReplanListRunnerErrorIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{errFn: func(string, []string) error { return fmt.Errorf("exec: bd not found") }}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "e")); got != 2 {
+		t.Fatalf("warpScan runner error must be a hard error (exit 2), got %d", got)
+	}
+}
+
 // TestPlanEmitReplanMalformedListJSONIsHard covers the pre-import list parse
 // path (warpRefMap json.Unmarshal failure). The post-import read-back parse
 // path is covered by TestPlanReplanReadbackMalformedJSONIsHard.
