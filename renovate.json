@@ -14,6 +14,19 @@
         "npm install -g (?<depName>@anthropic-ai/claude-code)@(?<currentValue>[0-9][0-9.]*)"
       ],
       "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the bd (gastownhall/beads) release pinned as BD_VERSION in the integration job so version rot / CVEs surface as Renovate PRs. BD_SHA256 is intentionally not auto-bumped (hosted Renovate cannot recompute a tarball hash); the sha256sum -c check in the same step fails closed until the hash is recomputed for the new version.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/ci\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "BD_VERSION=(?<currentValue>[0-9][0-9.]*)"
+      ],
+      "depNameTemplate": "gastownhall/beads",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ]
 }
