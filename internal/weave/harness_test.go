@@ -298,3 +298,39 @@ func execBD(r *scratchRepo, args ...string) *exec.Cmd {
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+r.beadsDir)
 	return cmd
 }
+
+// dataBool extracts data.<key> as a bool from an envelope's Data.
+func dataBool(t *testing.T, data json.RawMessage, key string) bool {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("data not an object: %v", err)
+	}
+	raw, ok := m[key]
+	if !ok {
+		t.Fatalf("data has no key %q: %s", key, data)
+	}
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		t.Fatalf("data.%s not bool: %v", key, err)
+	}
+	return b
+}
+
+// dataString extracts data.<key> as a string from an envelope's Data.
+func dataString(t *testing.T, data json.RawMessage, key string) string {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("data not an object: %v", err)
+	}
+	raw, ok := m[key]
+	if !ok {
+		t.Fatalf("data has no key %q: %s", key, data)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatalf("data.%s not string: %v", key, err)
+	}
+	return s
+}

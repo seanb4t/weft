@@ -2,7 +2,7 @@
   "epic": {
     "title": "Weave-loop E2E fixture",
     "description": "Synthetic branch-coverage epic for the seam-10 weave-loop proof.",
-    "acceptance": "All non-escalated picks land; the escalated pick is flagged human and blocked."
+    "acceptance": "All non-escalated picks land; the escalated pick is flagged human and left unlanded (surfaced via conflicts)."
   },
   "picks": [
     {"ref": "p1",  "title": "Clean pick",          "description": "lands directly", "labels": ["phase:impl"]},
