@@ -40,10 +40,16 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 			}
 			d := plan.Derive(wp.Picks, a.Config.PlanStructural(), a.Config.PlanOverlapMax())
 			if epic != "" {
-				// Guard against a flag-like epic id being misparsed by bd's own
-				// argument parser when forwarded as a subprocess argument.
-				if strings.HasPrefix(epic, "-") {
-					return exit.Invocationf("invalid --epic value %q: must not start with '-'", epic)
+				// Standard epic-id allowlist guard (mirrors finish.go / the
+				// changeIDPattern revset-injection idiom): rejects leading dashes,
+				// revset metacharacters, and path-walk sequences before the value
+				// is forwarded to a subprocess or interpolated into a revset.
+				if err := validateEpicID(epic); err != nil {
+					return err
+				}
+				// --allow-drop is a first-emit-only flag; reject it early on the replan path.
+				if allowDrop {
+					return exit.Invocationf("--allow-drop is not supported with --epic (replan): the bd import path has no field-drop preflight, so the flag would be a silent no-op")
 				}
 				return a.planReplan(cmd, wp, d, epic, dryRun)
 			}
@@ -52,7 +58,7 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "preview the warp without mutating beads")
 	c.Flags().StringVar(&epic, "epic", "", "existing epic id to re-plan against (bd import upsert)")
-	c.Flags().BoolVar(&allowDrop, "allow-drop", false, "proceed despite bd dropping unknown graph fields (loud, opt-in)")
+	c.Flags().BoolVar(&allowDrop, "allow-drop", false, "proceed despite bd dropping unknown graph fields (loud, opt-in; first emit only; not valid with --epic)")
 	return c
 }
 
@@ -215,11 +221,22 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
+	// Post-import read-back: re-read the epic's children and verify that every
+	// authored field round-tripped through bd import (seam 9 §7).
+	readback, err := a.warpReadback(epic)
+	if err != nil {
+		return err
+	}
+	if disc := plan.VerifyReplan(rp.Expect, readback); len(disc) > 0 {
+		return exit.Hardf("plan emit replan applied but %d authored field(s) did not round-trip (bd dropped them); the warp is incomplete — investigate:\n%s",
+			len(disc), strings.Join(disc, "\n"))
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
 		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
+		"verification": []string{},
 	}
 	return Emit(cmd, "plan.emit", data, replanText(epic, rp, false))
 }
@@ -248,6 +265,45 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 			if strings.HasPrefix(l, plan.RefLabelPrefix) {
 				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
 				m[ref] = plan.ExistingBead{ID: it.ID, Status: it.Status}
+			}
+		}
+	}
+	return m, nil
+}
+
+// warpReadback re-reads an epic's children after import and returns a map keyed
+// by ref (from weft-ref:<ref> labels) suitable for VerifyReplan. It is a
+// separate reader from warpRefMap because it reads fresh post-import state and
+// needs different fields (title, priority, description) than the pre-import
+// warpRefMap snapshot.
+func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
+	res, err := run.BD(a.Runner, "list", "--parent", epic, "--json")
+	if err != nil {
+		return nil, exit.Hardf("post-import read-back could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("post-import read-back: bd list failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	var arr []struct {
+		Title       string   `json:"title"`
+		Priority    int      `json:"priority"`
+		Labels      []string `json:"labels"`
+		Description string   `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &arr); err != nil {
+		return nil, exit.Hardf("post-import read-back: parse bd list json: %v", err)
+	}
+	m := map[string]plan.ReadbackBead{}
+	for _, it := range arr {
+		for _, l := range it.Labels {
+			if strings.HasPrefix(l, plan.RefLabelPrefix) {
+				ref := strings.TrimPrefix(l, plan.RefLabelPrefix)
+				m[ref] = plan.ReadbackBead{
+					Title:       it.Title,
+					Priority:    it.Priority,
+					Labels:      it.Labels,
+					Description: it.Description,
+				}
 			}
 		}
 	}

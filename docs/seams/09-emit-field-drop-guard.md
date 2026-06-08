@@ -40,8 +40,7 @@ In scope:
 Out of scope (explicitly deferred):
 
 - The formal warp-plan.json JSON Schema (§2 — dropped, not deferred-with-intent).
-- Deep verification of the replan/`bd import` path (§7 — a follow-up bead; the
-  minimum-viable surface lands here).
+- Deep verification of the replan/`bd import` path — delivered in this seam (§7: post-import read-back).
 - The other seam-2 §8 items (`[plan].structural` globs, drift detection,
   `has_checkpoint`) — separate seams.
 
@@ -211,7 +210,7 @@ convention (empty `[]` on a clean emit, never JSON `null`).
 |---|---|---|---|
 | First emit (wet) | `create` | yes | Carries any surfaced bd warning or `schema_version` mismatch note. Empty on a clean emit. |
 | First emit (dry-run) | `create` | yes | Preflight runs; warnings folded in. Empty when preflight is clean. Exit follows the strictness matrix (§4). |
-| Re-plan / upsert (wet) | `upsert` | yes | Minimum viable surface (§7): `bd import` stderr folded in; empty when bd is clean. No rich preflight available on this path. |
+| Re-plan / upsert (wet) | `upsert` | yes | Post-import read-back guard (§7): `bd import` stderr folded in; `verification` field present (never null); a non-round-tripping authored field or a failed read-back is exit 2. |
 | Re-plan / upsert (dry-run) | `upsert` | yes | No bd call precedes the dry-run on this path (§7); `warnings` is always `[]`. |
 
 The first-emit success envelope **preserves the existing seam-2 fields
@@ -257,14 +256,16 @@ Re-plan (upsert) wet envelope example:
     "deferred_edges": [],
     "tolerated": [],
     "warnings": [],
-    "bd_output": "…"
+    "bd_output": "…",
+    "verification": []
   },
   "next": "…"
 }
 ```
 
 Re-plan dry-run envelope example (`warnings` is always `[]` — no bd call
-precedes it on this path):
+precedes it on this path). Note: `verification` is intentionally absent here —
+dry-run does no import, so there is no read-back and no verification field.
 
 ```json
 {
@@ -288,17 +289,55 @@ precedes it on this path):
 On a hard-fail preflight the envelope is the standard `exit.Hardf` error (exit
 2) whose message includes bd's verbatim warning lines.
 
-## 7. Replan / import path (minimum viable + follow-up)
+## 7. Replan / import path — post-import read-back guard
 
 `bd import --dry-run` is **weak** — it reports only "Would import N issues…"
 with no per-field warnings (grounded: it did not flag a bogus field; its help
 states "the importer accepts every field"). So the rich preflight is not
 available on the replan path.
 
-This seam's minimum on `planReplan`: **stop discarding `bd import` stderr on
-success** and fold any warnings into the envelope (mirrors §4.4). A deeper
-guard — e.g. post-import read-back via `bd show`/`export` and diff against the
-intended records — is filed as a **follow-up bead**, not built here.
+The guard on `planReplan` is therefore **post-import read-back**: after a
+successful `bd import`, weft immediately re-reads the epic's children via
+`bd list --parent <epic> --json` and diffs the live state against the authored
+expectations that `BuildReplan` captured for every pick.
+
+### 7.1 What is verified
+
+For each pick (sorted by ref for determinism):
+
+- **Ref presence** — if the bead is absent from the read-back entirely (ref not
+  found in any `weft-ref:<ref>` label) → hard failure (the create/update did
+  not persist at all).
+- **Title** — exact equality between the sent title and the read-back title.
+- **Priority** — exact equality.
+- **Labels (subset check)** — every authored label weft sent must be present in
+  the read-back labels. bd may add its own labels (e.g. status/system labels),
+  so equality is not required — only that no authored label was dropped.
+- **Description presence** — when weft sent a non-empty description
+  (`HasDesc == true`), the read-back description must be non-empty/non-whitespace.
+  Content is not compared (bd may normalise whitespace/markdown).
+
+`dependencies` are **out of scope** for read-back — they are not in `bd list`
+output (only `dependency_count`) and are handled separately as `DeferredEdges`.
+
+### 7.2 Outcome
+
+- **Any discrepancy → hard exit 2** (`exit.Hardf`) with the full list of
+  discrepancy strings. The import ran but the warp is incomplete; the operator
+  must investigate. This is symmetric with the first-emit drop guard (§4.2).
+- **Clean → exit 0** with `"verification": []` in the success envelope so
+  `--json` consumers can confirm verification ran.
+- **Read-back `bd list` itself fails** → hard exit 2 (can't verify == hard;
+  we don't know whether the import persisted correctly).
+
+### 7.3 Output contract update
+
+The re-plan (upsert) wet envelope now carries an additional field:
+
+- `verification` — `[]string` (never null): empty on a clean round-trip,
+  populated with human-readable discrepancy strings on a hard failure (though in
+  the failure case the envelope is the `exit.Hardf` error, not a success
+  envelope).
 
 ## 8. Testing
 
@@ -315,13 +354,13 @@ intended records — is filed as a **follow-up bead**, not built here.
     the dry-run preflight (assert call order).
 - One **integration test** (build-tagged, real bd) asserting a representative
   `GraphJSON` produces zero `unknown field(s)` warnings and matching counts
-  against the live bd — the dev-time drift sentinel that catches a bd schema
-  change.
+  against the live bd — the drift sentinel that catches a bd schema change. CI
+  runs this automatically via the `integration` job in `.github/workflows/ci.yml`
+  (bd pinned at v1.0.5, checksum-verified; bump deliberately to re-validate
+  GraphJSON against the new bd schema).
 
 ## 9. Open sub-seams / follow-ups
 
-- **Replan/import deep verification** (§7) — post-import read-back diff. Follow-
-  up bead.
 - **warp-plan.json JSON Schema** — stays deferred under `weft-hjx` until a
   human/third-party authoring surface exists (§2).
 - `[plan].structural` default globs + `plan.overlap_max` default; declared-vs-
