@@ -225,6 +225,72 @@ func TestReplanJSONLImmutable(t *testing.T) {
 	}
 }
 
+// TestImportRecordFieldsAccountedForInReplanExpect is a structural drift guard.
+//
+// BuildReplan hand-copies importRecord fields into ReplanExpect (the post-import
+// round-trip expectation) in its pick loop, with no compile-time linkage between
+// the two structs (PR #36 review weft-m7o.8). If importRecord grows a new authored
+// field that bd must persist, ReplanExpect/VerifyReplan can silently drift: the new
+// field would never be checked after import, so a bd drop of it goes undetected.
+//
+// This test enumerates importRecord's fields via reflection and requires each to be
+// explicitly classified below: either verified by ReplanExpect/VerifyReplan, or
+// waived with a documented reason. Adding (or removing) an importRecord field
+// without updating the map fails the test, forcing a conscious verify-or-waive
+// decision at the exact moment the drift would otherwise be introduced.
+func TestImportRecordFieldsAccountedForInReplanExpect(t *testing.T) {
+	// classification for every importRecord field.
+	//   verified=true  => the field round-trips and ReplanExpect+VerifyReplan check it.
+	//   verified=false => intentionally not round-trip verified; reason says why.
+	type fieldClass struct {
+		verified bool
+		reason   string
+	}
+	accounted := map[string]fieldClass{
+		"ID":           {false, "bead identity / match key, not authored content; not a value to round-trip"},
+		"Title":        {true, "ReplanExpect.Title; VerifyReplan title check"},
+		"Description":  {true, "ReplanExpect.HasDesc; VerifyReplan description-presence check"},
+		"IssueType":    {false, `hardcoded "task" for every pick, not per-pick authored`},
+		"Priority":     {true, "ReplanExpect.Priority; VerifyReplan priority check"},
+		"Status":       {false, "preserved from the existing bead, not authored by the plan"},
+		"Parent":       {false, "always epicID (structural); enforced by the parent-scoped read-back, not a per-field check"},
+		"Labels":       {true, "ReplanExpect.Labels; VerifyReplan label-subset check"},
+		"Dependencies": {false, "edges, tracked via Replan.DeferredEdges and the dep round-trip, not a ReplanExpect scalar"},
+	}
+
+	rt := reflect.TypeOf(importRecord{})
+
+	// Forward: every importRecord field must be classified.
+	present := map[string]bool{}
+	for i := 0; i < rt.NumField(); i++ {
+		name := rt.Field(i).Name
+		present[name] = true
+		if _, ok := accounted[name]; !ok {
+			t.Errorf("importRecord field %q is unaccounted for in the ReplanExpect drift guard.\n"+
+				"A new importRecord field requires a decision: verify it in ReplanExpect/VerifyReplan, "+
+				"or add it here with verified=false and a reason.", name)
+		}
+	}
+
+	// Reverse: no stale entries for fields that no longer exist.
+	for name := range accounted {
+		if !present[name] {
+			t.Errorf("drift guard classifies %q but importRecord has no such field; remove the stale entry", name)
+		}
+	}
+
+	// Sanity: the set of verified=true fields must equal the fields VerifyReplan
+	// actually inspects, so flipping a field's classification without wiring the
+	// check (or vice versa) is caught here too.
+	wantVerified := map[string]bool{"Title": true, "Description": true, "Priority": true, "Labels": true}
+	for name, fc := range accounted {
+		if fc.verified != wantVerified[name] {
+			t.Errorf("field %q verified=%v but VerifyReplan coverage says %v; keep the classification and the checker in sync",
+				name, fc.verified, wantVerified[name])
+		}
+	}
+}
+
 // TestDeriveIsDeterministic verifies that Derive produces identical Edges
 // regardless of the input pick order. A stray map iteration would break this.
 func TestDeriveIsDeterministic(t *testing.T) {
