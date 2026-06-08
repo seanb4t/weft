@@ -32,6 +32,7 @@ import (
 // last (with no beads above it), only the escalated bead itself is stuck, and
 // the non-conflicted bead of the escalate pair can still be landed.
 func TestWeaveLoopEndToEnd(t *testing.T) {
+	requireSubstrate(t)
 	r := newScratchRepo(t)
 	fx := r.seedFixture(t)
 
@@ -294,6 +295,19 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 	if len(conflicts) == 0 {
 		t.Fatalf("resume.data.conflicts is empty — escalated change not surfaced; resume.Data=%s", resume.Data)
 	}
+	// The escalated change-id (c2.Change) must be a member of resume.data.conflicts.
+	// This catches regressions where resume reports a stale or different change-id.
+	foundConflict := false
+	for _, ch := range conflicts {
+		if ch == c2.Change {
+			foundConflict = true
+			break
+		}
+	}
+	if !foundConflict {
+		t.Fatalf("escalated change %s not found in resume.data.conflicts=%v; resume.Data=%s",
+			c2.Change, conflicts, resume.Data)
+	}
 
 	// Confirm the `human` label via bd show (the escalation gate in the engine).
 	r.assertBeadHasLabel(t, escalatedBead, "human")
@@ -381,9 +395,18 @@ func (r *scratchRepo) healAllConflicts(t *testing.T, resolveDir string) {
 	listAfter := exec.Command("jj", "--no-pager", "resolve", "--list")
 	listAfter.Dir = resolveDir
 	listOut, listErr := listAfter.CombinedOutput()
-	// jj resolve --list exits non-zero when there are no conflicts (nothing to list).
-	// So we check the trimmed output, not the exit code.
-	if listErr == nil && strings.TrimSpace(string(listOut)) != "" {
+	// jj resolve --list exits non-zero (exit 2) when there are no conflicts
+	// ("No conflicts found at this revision"). That is the desired clean state.
+	// Any other non-nil error is a genuine jj failure and must fail loudly.
+	// Exit 0 with non-empty output means conflicts remain — also fail loudly.
+	if listErr != nil {
+		// Treat "no conflicts" (exit 2) as the expected clean state; fail on anything else.
+		if exitErr, ok := listErr.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 {
+			t.Fatalf("healAllConflicts: jj resolve --list unexpected error in %s: %v\n%s", resolveDir, listErr, listOut)
+		}
+		// Exit 2 means "No conflicts found" — workspace is clean, proceed.
+	} else if strings.TrimSpace(string(listOut)) != "" {
+		// Exit 0 with output means conflicts are still present.
 		t.Fatalf("healAllConflicts: jj resolve --list still reports conflicts after write+snapshot in %s:\n%s", resolveDir, listOut)
 	}
 }

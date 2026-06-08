@@ -7,6 +7,7 @@
 package weave_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 // that add the SAME new path with different content must produce a first-class
 // jj conflict at `weft shed integrate`, surfaced in data.conflicts.
 func TestDeterministicConflictAtIntegrate(t *testing.T) {
+	requireSubstrate(t)
 	r := newScratchRepo(t)
 
 	// Two sibling beads under one epic, no deps → both ready in one wave.
@@ -72,23 +74,27 @@ func (r *scratchRepo) mustCreateChild(t *testing.T, epic, title, ref string) str
 }
 
 // bdCreateID runs `bd create ... --json` and returns the new bead id.
-// Routes through lastJSONLine so any bd warnings on stderr do not corrupt the
-// parse (consistent with runWeft's envelope extraction).
+// Uses separate stdout/stderr buffers (matching onlyEpicID/childBeads) so that
+// any bd warnings or chatter on stderr cannot corrupt the JSON parse.
+// Routes stdout through lastJSONLine because bd --json output may be
+// multi-line pretty-printed JSON.
 func (r *scratchRepo) bdCreateID(t *testing.T, args ...string) string {
 	t.Helper()
 	cmd := execBD(r, append([]string{"create", "--json"}, args...)...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("bd create: %v\n%s", err, out)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("bd create: %v\nstderr: %s", err, stderr.String())
 	}
 	var res struct {
 		ID string `json:"id"`
 	}
-	if err := json.Unmarshal([]byte(lastJSONLine(out)), &res); err != nil {
-		t.Fatalf("parse bd create json: %v\n%s", err, out)
+	if err := json.Unmarshal([]byte(lastJSONLine(stdout.Bytes())), &res); err != nil {
+		t.Fatalf("parse bd create json: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 	if res.ID == "" {
-		t.Fatalf("bd create returned empty id:\n%s", out)
+		t.Fatalf("bd create returned empty id:\nstdout: %s\nstderr: %s", stdout.String(), stderr.String())
 	}
 	return res.ID
 }

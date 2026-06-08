@@ -113,6 +113,7 @@ func (r *scratchRepo) childBeads(t *testing.T, epic string) []childBead {
 // TestSeedFixture verifies that seedFixture seeds exactly six picks under one
 // epic in a fresh scratch repo.
 func TestSeedFixture(t *testing.T) {
+	requireSubstrate(t)
 	r := newScratchRepo(t)
 	fx := r.seedFixture(t)
 	if fx.epic == "" {

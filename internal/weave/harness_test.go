@@ -20,18 +20,35 @@ import (
 // weftBin is the path to the weft binary built once for the whole package.
 var weftBin string
 
-// TestMain builds weft once into a temp dir and shares it across tests. If
-// jj or bd are not on PATH, every test in the package skips (the loop cannot
-// run without the real substrate).
+// substrateOK is true when jj and bd are both on PATH and the weft binary was
+// built successfully. Integration tests call requireSubstrate(t) to skip
+// cleanly when the substrate is absent; untagged tests (TestFixtureWarpParses)
+// do NOT call requireSubstrate and always run.
+var substrateOK bool
+
+// requireSubstrate skips the calling test when jj/bd are not on PATH.
+// Call as the first line of each integration test.
+func requireSubstrate(t *testing.T) {
+	t.Helper()
+	if !substrateOK {
+		t.Skip("jj/bd not on PATH — skipping integration test")
+	}
+}
+
+// TestMain builds weft once into a temp dir and shares it across tests. If jj
+// or bd are missing, substrateOK is set to false and m.Run() is still called so
+// that untagged tests (e.g. TestFixtureWarpParses) can run. Integration tests
+// guard themselves via requireSubstrate(t).
 func TestMain(m *testing.M) {
 	if _, err := exec.LookPath("jj"); err != nil {
-		// No jj: skip the whole package by reporting success with nothing run.
-		os.Stderr.WriteString("weave: jj not on PATH — skipping integration package\n")
-		os.Exit(0)
+		os.Stderr.WriteString("weave: jj not on PATH — integration tests will skip\n")
+		code := m.Run()
+		os.Exit(code)
 	}
 	if _, err := exec.LookPath("bd"); err != nil {
-		os.Stderr.WriteString("weave: bd not on PATH — skipping integration package\n")
-		os.Exit(0)
+		os.Stderr.WriteString("weave: bd not on PATH — integration tests will skip\n")
+		code := m.Run()
+		os.Exit(code)
 	}
 	dir, err := os.MkdirTemp("", "weft-bin-")
 	if err != nil {
@@ -46,6 +63,7 @@ func TestMain(m *testing.M) {
 		os.Stderr.WriteString("weave: go build weft: " + err.Error() + "\n")
 		os.Exit(1)
 	}
+	substrateOK = true
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
@@ -140,8 +158,9 @@ func (r *scratchRepo) runWeft(t *testing.T, dir string, args ...string) envelope
 		t.Fatalf("weft %s (dir=%s) failed: %v\noutput:\n%s",
 			strings.Join(args, " "), dir, err, out)
 	}
-	// The envelope is the LAST non-empty line (bd/jj chatter may precede it on
-	// stderr, but --json prints the envelope to stdout as the final line).
+	// The envelope is the LAST top-level JSON object in the combined output
+	// (stdout+stderr are merged by CombinedOutput; bd/jj chatter may precede
+	// the weft JSON envelope in the merged stream).
 	var env envelope
 	if err := json.Unmarshal([]byte(lastJSONLine(out)), &env); err != nil {
 		t.Fatalf("weft %s: parse envelope: %v\noutput:\n%s", strings.Join(args, " "), err, out)
@@ -161,7 +180,8 @@ func (r *scratchRepo) runWeft(t *testing.T, dir string, args ...string) envelope
 // brace-balance depth. Algorithm:
 //
 //  1. Forward-scan the whole input building a brace-depth array; entries inside
-//     strings are marked as depth -1 (inString).
+//     strings carry the current depth cur (unchanged by the brace inside the
+//     string — they are simply skipped for brace-delta purposes).
 //  2. Find the last position where depth returns to 0 after opening at depth 1
 //     — that is the end of the last top-level object.
 //  3. Walk backwards from that end to find its matching '{' at depth 0→1.

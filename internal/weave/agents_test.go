@@ -52,17 +52,3 @@ func (r *scratchRepo) scriptedExecutor(t *testing.T, ws, ref string, failVerify 
 		_ = os.Remove(marker) // ensure absent on the passing (re)try
 	}
 }
-
-// scriptedResolver acts in the resolution workspace opened by `conflict open`.
-// heal=true: rewrite the conflicted file with a clean merged body (markers
-// removed) so finalize squashes+heals. heal=false: leave the workspace
-// untouched so finalize sees a still-conflicted @ and escalates (human label).
-func (r *scratchRepo) scriptedResolver(t *testing.T, resolveDir, conflictedFile string, heal bool) {
-	t.Helper()
-	if !heal {
-		return // leave markers → escalation path
-	}
-	if err := os.WriteFile(filepath.Join(resolveDir, conflictedFile), []byte("resolved\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
