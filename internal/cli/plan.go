@@ -189,11 +189,13 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if err != nil {
 		return exit.Hardf("build re-plan payload: %v", err)
 	}
+	warnings := []string{}
 	if dryRun {
 		data := map[string]any{
 			"dry_run": true, "mode": "upsert", "epic": epic,
 			"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
 			"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+			"warnings": warnings,
 		}
 		return Emit(cmd, "plan.emit", data, replanText(epic, rp, true))
 	}
@@ -209,11 +211,14 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if res.Code != 0 {
 		return exit.Hardf("bd import failed: %s", strings.TrimSpace(res.Stderr))
 	}
+	if s := strings.TrimSpace(res.Stderr); s != "" {
+		warnings = append(warnings, s)
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
 		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
-		"bd_output": strings.TrimSpace(res.Stdout),
+		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
 	}
 	return Emit(cmd, "plan.emit", data, replanText(epic, rp, false))
 }

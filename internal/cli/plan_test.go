@@ -348,3 +348,27 @@ func TestPlanEmitSchemaMismatchIsSoft(t *testing.T) {
 		t.Errorf("schema note must be surfaced: %q", out.String())
 	}
 }
+
+func TestPlanReplanSurfacesImportStderr(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			return run.Result{Stdout: "[]", Code: 0} // no existing children
+		}
+		if strings.HasPrefix(j, "import") {
+			return run.Result{Stdout: "imported 1", Stderr: "warning: something bd noticed", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "weft-abc", "--json")
+	if err != nil {
+		t.Fatalf("replan: %v", err)
+	}
+	if !strings.Contains(out.String(), "something bd noticed") {
+		t.Errorf("bd import stderr must be surfaced in warnings: %q", out.String())
+	}
+	if !strings.Contains(out.String(), `"warnings"`) {
+		t.Errorf("warnings key must be present in envelope: %q", out.String())
+	}
+}
