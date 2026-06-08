@@ -25,6 +25,7 @@ func (a *App) newPlanCmd() *cobra.Command {
 func (a *App) newPlanEmitCmd() *cobra.Command {
 	var dryRun bool
 	var epic string
+	var allowDrop bool
 	c := &cobra.Command{
 		Use:   "emit <file>",
 		Short: "Emit the warp from warp-plan.json (derive edges, preview, create/upsert)",
@@ -46,33 +47,69 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 				}
 				return a.planReplan(cmd, wp, d, epic, dryRun)
 			}
-			return a.planFirstEmit(cmd, wp, d, dryRun)
+			return a.planFirstEmit(cmd, wp, d, dryRun, allowDrop)
 		},
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "preview the warp without mutating beads")
 	c.Flags().StringVar(&epic, "epic", "", "existing epic id to re-plan against (bd import upsert)")
+	c.Flags().BoolVar(&allowDrop, "allow-drop", false, "proceed despite bd dropping unknown graph fields (loud, opt-in)")
 	return c
 }
 
-// planFirstEmit creates a brand-new warp via bd create --graph (spec §6).
-func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, dryRun bool) error {
+// planFirstEmit creates a brand-new warp via bd create --graph (spec §5),
+// gated by a bd-backed dry-run preflight that refuses to silently drop fields
+// (seam 9 / docs/seams/09-emit-field-drop-guard.md).
+func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, dryRun, allowDrop bool) error {
 	graph, err := plan.GraphJSON(wp, d)
 	if err != nil {
-		return exit.Hardf("build graph payload: %v", err)
+		return err
 	}
-	if dryRun {
-		data := map[string]any{
-			"dry_run": true, "mode": "create", "epic": wp.Epic.Title,
-			"picks": len(wp.Picks), "edges": d.Edges, "tolerated": d.Tolerated,
-		}
-		return Emit(cmd, "plan.emit", data, planPreviewText("create", wp, d))
-	}
-	// bd create --graph takes a file path (no stdin), so stage the payload.
 	path, cleanup, err := writeTempPayload("weft-warp-*.json", graph)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	// Preflight: bd's own dry-run reports dropped fields (stderr) + the parsed
+	// graph shape (stdout). It mutates nothing, so we can abort before any create.
+	pre, err := run.BD(a.Runner, "create", "--graph", path, "--dry-run", "--json")
+	if err != nil {
+		return exit.Hardf("bd create --graph dry-run could not run: %v", err)
+	}
+	if pre.Code != 0 {
+		return exit.Hardf("bd create --graph dry-run failed: %s", strings.TrimSpace(pre.Stderr))
+	}
+	pf, err := plan.ParsePreflight([]byte(pre.Stdout), []byte(pre.Stderr))
+	if err != nil {
+		return exit.Hardf("%v", err)
+	}
+	issues := plan.CheckPreflight(pf, 1+len(wp.Picks), len(d.Edges))
+
+	warnings := []string{}
+	if issues.CountMismatch != "" {
+		return exit.Hardf("plan emit aborted: %s", issues.CountMismatch)
+	}
+	if len(issues.Drops) > 0 {
+		if !allowDrop {
+			return exit.Hardf("plan emit aborted — bd would drop fields (data loss); fix the payload or pass --allow-drop:\n%s",
+				strings.Join(issues.Drops, "\n"))
+		}
+		warnings = append(warnings, issues.Drops...)
+	}
+	warnings = append(warnings, pf.Notes...)
+	if issues.SchemaNote != "" {
+		warnings = append(warnings, issues.SchemaNote)
+	}
+
+	if dryRun {
+		data := map[string]any{
+			"dry_run": true, "mode": "create", "epic": wp.Epic.Title,
+			"picks": len(wp.Picks), "edges": d.Edges, "tolerated": d.Tolerated,
+			"schema_version": pf.SchemaVersion, "warnings": warnings,
+		}
+		return Emit(cmd, "plan.emit", data, planPreviewText("create", wp, d))
+	}
+
 	res, err := run.BD(a.Runner, "create", "--graph", path)
 	if err != nil {
 		return exit.Hardf("bd create --graph could not run: %v", err)
@@ -80,9 +117,14 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if res.Code != 0 {
 		return exit.Hardf("bd create --graph failed: %s", strings.TrimSpace(res.Stderr))
 	}
+	// Surface any warning the real create emits on success.
+	if s := strings.TrimSpace(res.Stderr); s != "" {
+		warnings = append(warnings, s)
+	}
 	data := map[string]any{
 		"mode": "create", "created": len(wp.Picks), "edges": d.Edges,
-		"tolerated": d.Tolerated, "bd_output": strings.TrimSpace(res.Stdout),
+		"tolerated": d.Tolerated, "schema_version": pf.SchemaVersion,
+		"warnings": warnings, "bd_output": strings.TrimSpace(res.Stdout),
 	}
 	text := fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\n%s",
 		len(wp.Picks), len(d.Edges), len(d.Tolerated), strings.TrimSpace(res.Stdout))
@@ -148,11 +190,13 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if err != nil {
 		return exit.Hardf("build re-plan payload: %v", err)
 	}
+	warnings := []string{} // vacuously empty for dry-run (no bd call); present for envelope-shape stability
 	if dryRun {
 		data := map[string]any{
 			"dry_run": true, "mode": "upsert", "epic": epic,
 			"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
 			"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+			"warnings": warnings,
 		}
 		return Emit(cmd, "plan.emit", data, replanText(epic, rp, true))
 	}
@@ -168,11 +212,14 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if res.Code != 0 {
 		return exit.Hardf("bd import failed: %s", strings.TrimSpace(res.Stderr))
 	}
+	if s := strings.TrimSpace(res.Stderr); s != "" {
+		warnings = append(warnings, s)
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
 		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
-		"bd_output": strings.TrimSpace(res.Stdout),
+		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
 	}
 	return Emit(cmd, "plan.emit", data, replanText(epic, rp, false))
 }

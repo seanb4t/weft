@@ -137,7 +137,34 @@ the epic comes off the loom and is finished out into the world.
 | `finish open <epic>` | coarse | `jj bookmark set` + `jj git push -b` + assemble PR body from the epic's closed beads + `gh pr create` | PR body generated from closed beads (§5.1 audit). |
 | `finish reconcile <epic>` | coarse | `jj git fetch` + `jj rebase -b @ -o main --skip-emptied` + `jj bookmark delete` | Post-squash-merge cleanup. `-b @` explicit (never `-r @`, which truncates chains). |
 
-### 4.5 `weft resume --epic E` — read-only projection
+### 4.5 `weft plan …` — planning → warp emission (seam 2 / seam 9)
+
+| Verb | Kind | Wraps | Notes |
+|---|---|---|---|
+| `plan check <file>` | thin | `internal/plan.Validate` | Structural + relational validation. Always exits 0; validity is data: `{ok, verb:"plan.check", data:{valid:bool, issues:[…]}}`. |
+| `plan emit <file>` | coarse | `bd create --graph` (first emit) / `bd import` (re-plan) | See below. |
+
+**`plan emit` flag contract** ([seam 9](09-emit-field-drop-guard.md)):
+
+| Flag | Effect |
+|---|---|
+| *(none)* | First emit: bd-backed preflight (`bd create --graph --dry-run --json`) runs before the real create; hard-fails (exit 2) if bd would silently drop any graph field or if node/edge counts mismatch. |
+| `--dry-run` | bd-backed dry run: runs the preflight and folds its warnings + counts + `schema_version` into the envelope — no mutation follows. Exit code follows the strictness matrix below. |
+| `--allow-drop` | Downgrades a *drop warning* to a surfaced entry in `data.warnings` and proceeds. Does **not** bypass a count mismatch (count mismatch is always hard). Forward-compat escape hatch; never the default. |
+| `--epic <id>` | Re-plan against an existing epic (`bd import` upsert). |
+
+**Exit-2 contract (seam 9 §4):**
+
+`weft plan emit` may exit 2 in two distinct cases — both are data-integrity failures, not invocation errors:
+
+1. **Field drop:** the bd preflight stderr contains `unknown field(s)` — a field weft sent would be silently lost. Surfaced verbatim. Downgrade with `--allow-drop`.
+2. **Count mismatch:** `node_count` or `edge_count` in the preflight envelope does not match what weft built (`1 + len(picks)` nodes, `len(derivation.Edges)` edges). Always hard; `--allow-drop` does not bypass it.
+
+A `schema_version` difference between weft's `ExpectedGraphSchemaVersion` and the bd preflight's reported value is a **soft warning** only — it appears in `data.warnings` but does not block the emit.
+
+**`data.warnings`** is `[]string`, never null (empty on a clean emit). Any surfaced bd warning or `schema_version` mismatch note appears here.
+
+### 4.6 `weft resume --epic E` — read-only projection
 
 The computed `STATE.md` (design.md §3 maps GSD's `STATE.md` →
 `bd ready`/`bd blocked` + `jj log`). Projects durable state — it never restores

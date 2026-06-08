@@ -172,10 +172,16 @@ opportunistic, pick-by-pick call; there is no global switch. When the benefit is
    ```
    `weft plan check` returns `{ok, verb:"plan.check", data:{valid:bool, issues:[…]}}` on
    exit 0 regardless of validity — inspect `data.valid`. `weft plan emit --dry-run`
-   returns the full warp preview (epic, issues, edges, warn+tolerate overlaps) without
-   mutation. This dry-run output is the human approval gate — present it to the user and
-   wait for go-ahead before running `weft plan emit warp-plan.json` (no `--dry-run`) to
-   materialise the warp.
+   is **bd-backed** (seam 9): it runs a real bd preflight and folds the results into the
+   envelope without mutating beads. A non-zero exit from `--dry-run` now means one of:
+   (a) bd would **silently drop a field** (data loss — exit 2; fix the payload and retry),
+   or (b) a **node/edge count mismatch** between what weft built and what bd parsed
+   (always hard — exit 2). A `schema_version` difference is a soft warning only: it
+   appears in `data.warnings` and exit is still 0. Check `data.warnings` (always a
+   `[]string`, never null) for any surfaced bd warnings even on exit 0. This dry-run
+   output is the human approval gate — present it to the user and wait for go-ahead
+   before running `weft plan emit warp-plan.json` (no `--dry-run`) to materialise the
+   warp.
 
 ## Quality gate (self-check before handing off)
 

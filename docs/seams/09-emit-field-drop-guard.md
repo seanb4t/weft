@@ -203,14 +203,26 @@ These need no new code — they become spec-documented contract:
 
 ## 6. Output contract
 
+The table below summarises which `data` fields appear on each emit path.
+`warnings` is `[]string`, **never null** — per the engine output-contract
+convention (empty `[]` on a clean emit, never JSON `null`).
+
+| Path | Mode | `warnings` present? | Notes |
+|---|---|---|---|
+| First emit (wet) | `create` | yes | Carries any surfaced bd warning or `schema_version` mismatch note. Empty on a clean emit. |
+| First emit (dry-run) | `create` | yes | Preflight runs; warnings folded in. Empty when preflight is clean. Exit follows the strictness matrix (§4). |
+| Re-plan / upsert (wet) | `upsert` | yes | Minimum viable surface (§7): `bd import` stderr folded in; empty when bd is clean. No rich preflight available on this path. |
+| Re-plan / upsert (dry-run) | `upsert` | yes | No bd call precedes the dry-run on this path (§7); `warnings` is always `[]`. |
+
 The first-emit success envelope **preserves the existing seam-2 fields
 unchanged** — `mode`, `created` (pick count), `edges` (the derivation slice),
 `tolerated`, `bd_output` — and **adds two** (additive only; no rename, so the
 `--pick` extractor and any `data.*` consumer keep working):
 
-- `schema_version` — bd's observed graph schema version (§4.3).
-- `warnings` — a `[]string` (never nil — per the engine output-contract
-  convention; empty on a clean emit), carrying any surfaced bd warning or a
+- `schema_version` — bd's observed graph schema version (§4.3). Present on the
+  first-emit path (preflight provides it); absent on the re-plan path (bd import
+  does not expose it).
+- `warnings` — `[]string` (never null), carrying any surfaced bd warning or a
   `schema_version` mismatch note.
 
 ```json
@@ -225,6 +237,49 @@ unchanged** — `mode`, `created` (pick count), `edges` (the derivation slice),
     "schema_version": 1,
     "warnings": [],
     "bd_output": "…"
+  },
+  "next": "…"
+}
+```
+
+Re-plan (upsert) wet envelope example:
+
+```json
+{
+  "ok": true,
+  "verb": "plan.emit",
+  "data": {
+    "mode": "upsert",
+    "epic": "weft-42",
+    "updated": ["p1"],
+    "created": ["p2"],
+    "removed": [],
+    "deferred_edges": [],
+    "tolerated": [],
+    "warnings": [],
+    "bd_output": "…"
+  },
+  "next": "…"
+}
+```
+
+Re-plan dry-run envelope example (`warnings` is always `[]` — no bd call
+precedes it on this path):
+
+```json
+{
+  "ok": true,
+  "verb": "plan.emit",
+  "data": {
+    "dry_run": true,
+    "mode": "upsert",
+    "epic": "weft-42",
+    "updated": ["p1"],
+    "created": ["p2"],
+    "removed": [],
+    "deferred_edges": [],
+    "tolerated": [],
+    "warnings": []
   },
   "next": "…"
 }

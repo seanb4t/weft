@@ -270,6 +270,40 @@ func TestGraphJSONIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestGraphJSONEmitsOnlyKnownFields(t *testing.T) {
+	wp := WarpPlan{
+		Epic:  Epic{Title: "E", Description: "d", Acceptance: "AC"},
+		Picks: []Pick{{Ref: "a", Title: "A", Description: "a", Labels: []string{"x"}}},
+	}
+	b, err := GraphJSON(wp, Derive(wp.Picks, nil, 1))
+	if err != nil {
+		t.Fatalf("graph: %v", err)
+	}
+	var raw struct {
+		Nodes []map[string]json.RawMessage `json:"nodes"`
+		Edges []map[string]json.RawMessage `json:"edges"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	nodeOK := map[string]bool{"key": true, "title": true, "description": true, "type": true, "parent_key": true, "labels": true, "priority": true}
+	edgeOK := map[string]bool{"from_key": true, "to_key": true, "type": true}
+	for _, n := range raw.Nodes {
+		for k := range n {
+			if !nodeOK[k] {
+				t.Errorf("node carries unknown-to-bd field %q (would be silently dropped)", k)
+			}
+		}
+	}
+	for _, e := range raw.Edges {
+		for k := range e {
+			if !edgeOK[k] {
+				t.Errorf("edge carries unknown-to-bd field %q", k)
+			}
+		}
+	}
+}
+
 // TestBuildReplanIsDeterministic verifies that BuildReplan produces
 // byte-identical JSONL regardless of input pick order.
 func TestBuildReplanIsDeterministic(t *testing.T) {
