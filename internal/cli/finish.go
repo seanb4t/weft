@@ -87,6 +87,69 @@ func assemblePRBody(epic, title string, picks []finishPick) string {
 	return b.String()
 }
 
+// collapseClosedPicks rebases the epic's closed picks into a single linear line
+// rooted on trunk(), so `finish open`'s `bookmark set -r @` + push ship exactly
+// the landed work. Picks are placed ancestors-first (a healed upper member's
+// content is parent-relative, so its lower member must remain its ancestor).
+// An escalated/open pick is not in `picks`, so it is never moved and is left
+// parked as a trunk() child, off the @-line.
+func collapseClosedPicks(r run.Runner, picks []finishPick) error {
+	if len(picks) == 0 {
+		return nil
+	}
+	revs := make([]string, 0, len(picks))
+	for _, p := range picks {
+		if !changeIDPattern.MatchString(p.Change) {
+			return exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", p.Change)
+		}
+		revs = append(revs, p.Change)
+	}
+	// Ancestors-first order over the closed changes (verified jj 0.42 idiom,
+	// Step 1): jj has no `reverse()` revset function — ancestors-first ordering
+	// is the `--reversed` log flag. It lists a chain root-first; independent
+	// groups interleave but each group's internal order is preserved.
+	res, err := run.JJ(r, "log", "-r", strings.Join(revs, " | "), "--no-graph", "--reversed", "-T", `change_id.short(12) ++ "\n"`)
+	if err != nil {
+		return exit.Hardf("jj log (collapse order) could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return exit.Hardf("jj log (collapse order) failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	// Every closed pick must come back from the order query; a short result means
+	// the revset silently dropped a change (e.g. a stale/abandoned change-id), and
+	// proceeding would push an uncollapsed forest. Fail loudly instead.
+	lines := splitTrimLines(res.Stdout)
+	if len(lines) != len(revs) {
+		return exit.Hardf("jj log (collapse order) returned %d change-ids, want %d (closed picks): %q",
+			len(lines), len(revs), res.Stdout)
+	}
+	prev := "trunk()"
+	var top string
+	for _, ch := range lines {
+		// Re-validate at the interpolation point: `ch` came from jj's stdout, not
+		// directly from the already-validated `revs`, so guard before it enters the
+		// `rebase -r` revset (and, as `top`, the trailing `jj new`).
+		if !changeIDPattern.MatchString(ch) {
+			return exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", ch)
+		}
+		if res, err := run.JJ(r, "rebase", "-r", ch, "-o", prev); err != nil {
+			return exit.Hardf("jj rebase could not run: %v", err)
+		} else if res.Code != 0 {
+			return exit.Hardf("jj rebase -r %s failed: %s", ch, strings.TrimSpace(res.Stderr))
+		}
+		prev = ch
+		top = ch
+	}
+	if top != "" {
+		if res, err := run.JJ(r, "new", top); err != nil {
+			return exit.Hardf("jj new could not run: %v", err)
+		} else if res.Code != 0 {
+			return exit.Hardf("jj new %s failed: %s", top, strings.TrimSpace(res.Stderr))
+		}
+	}
+	return nil
+}
+
 func (a *App) newFinishCmd() *cobra.Command {
 	finish := &cobra.Command{Use: "finish", Short: "Ship an epic: open a PR, then reconcile after merge (spec §6 / seam 6)"}
 	finish.AddCommand(a.newFinishOpenCmd(), a.newFinishReconcileCmd())
@@ -140,13 +203,12 @@ func (a *App) finishOpenPreflight(epic string) ([]finishPick, error) {
 	if !strings.Contains(res.Stdout, "origin") {
 		return nil, exit.Invocationf("no 'origin' remote configured — cannot push %s", epic)
 	}
-	// 4. gh authenticated (Code!=0 is user-fixable → Invocation, not Hard).
-	if ares, err := run.GH(a.Runner, "auth", "status"); err != nil {
-		return nil, exit.Hardf("gh auth status could not run (is gh installed?): %v", err)
-	} else if ares.Code != 0 {
-		return nil, exit.Invocationf("gh is not authenticated — run `gh auth login`")
-	}
-	// 5. Empty-epic guard (§5): refuse rather than open an empty PR.
+	// gh authentication is NOT checked here: `finish open --dry-run` previews the
+	// push plan + PR body without ever invoking gh, so requiring auth would make a
+	// read-only preview fail in unauthenticated environments (e.g. CI). The gh auth
+	// gate runs on the real ship path only (see newFinishOpenCmd, after the
+	// dry-run early return).
+	// 4. Empty-epic guard (§5): refuse rather than open an empty PR.
 	picks, err := closedPicks(a.Runner, epic)
 	if err != nil {
 		return nil, err
@@ -197,8 +259,26 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 					fmt.Sprintf("[dry-run] would push %s and open PR:\n%s", epic, body))
 			}
 
-			// Set the bookmark at the working-copy tip and push.
-			if res, err := run.JJ(a.Runner, "bookmark", "set", epic, "-r", "@"); err != nil {
+			// gh must be authenticated to open the PR (real ship path only; a
+			// dry-run never reaches here). Code!=0 is user-fixable → Invocation.
+			if ares, err := run.GH(a.Runner, "auth", "status"); err != nil {
+				return exit.Hardf("gh auth status could not run (is gh installed?): %v", err)
+			} else if ares.Code != 0 {
+				return exit.Invocationf("gh is not authenticated — run `gh auth login`")
+			}
+
+			// Collapse the closed picks into one line rooted on trunk() (forest →
+			// line), parking any escalated pick on trunk(), so the push ships only
+			// landed work. collapseClosedPicks ends with `jj new <top>`, leaving @
+			// an empty change ABOVE the collapsed tip — so the bookmark is set at
+			// @- (the described tip), never the empty @ (jj refuses to push a
+			// no-description commit).
+			if err := collapseClosedPicks(a.Runner, picks); err != nil {
+				return err
+			}
+
+			// Set the bookmark at the collapsed line tip (@-, not the empty @) and push.
+			if res, err := run.JJ(a.Runner, "bookmark", "set", epic, "-r", "@-"); err != nil {
 				return exit.Hardf("jj bookmark set could not run: %v", err)
 			} else if res.Code != 0 {
 				return exit.Hardf("jj bookmark set %s failed: %s", epic, strings.TrimSpace(res.Stderr))

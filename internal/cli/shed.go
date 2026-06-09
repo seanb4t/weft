@@ -155,10 +155,25 @@ func (a *App) newShedIsolateCmd() *cobra.Command {
 	}
 }
 
+// changeFiles returns the set of files a change touches, via
+// `jj diff --name-only -r <change>` (verified present in jj 0.42). The caller
+// MUST have validated the change-id against changeIDPattern before calling, as
+// it is interpolated into the -r revset position.
+func changeFiles(r run.Runner, change string) ([]string, error) {
+	res, err := run.JJ(r, "diff", "--name-only", "-r", change)
+	if err != nil {
+		return nil, exit.Hardf("jj diff --name-only could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("jj diff --name-only %s failed: %s", change, strings.TrimSpace(res.Stderr))
+	}
+	return splitTrimLines(res.Stdout), nil
+}
+
 func (a *App) newShedIntegrateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "integrate <bead-id>...",
-		Short: "Rebase the wave's sealed changes into a dep-ordered linear stack",
+		Short: "Rebase the wave's sealed changes into a file-overlap forest of sub-stacks",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Wave members are mutually independent (spec §4.1), so the dep graph
@@ -167,7 +182,8 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			beads := append([]string{}, args...)
 			sort.Strings(beads)
 
-			// Resolve each pick's sealed change-id (the spine).
+			// Resolve each pick's sealed change-id (the spine) and remember its bead.
+			beadOf := map[string]string{}
 			changes := make([]string, 0, len(beads))
 			for _, b := range beads {
 				ch, err := changeOf(a.Runner, b)
@@ -178,47 +194,56 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 					return exit.Invocationf("bead %s has no jj-change label (not sealed)", b)
 				}
 				changes = append(changes, ch)
+				beadOf[ch] = b
 			}
 
-			// Allowlist-validate every change-id before it is interpolated into a
-			// jj revset. Both the per-member `rebase -s <ch>` below and the scoped
-			// conflicts() revset further down take change-ids straight from the
-			// bead's jj-change:<id> label; a tampered label could otherwise inject
-			// revset metacharacters and silently alter evaluation (no OS-shell
-			// injection — exec is arg-sliced). Same guard the sibling
-			// revset-builders apply (conflict.go changeConflicted /
-			// scopedConflictChanges, resume.go conflictChanges); changeIDPattern is
-			// defined in conflict.go (same package).
+			// Allowlist-validate every change-id before any revset interpolation
+			// (the standing guard; conflict.go/resume.go apply the same).
 			for _, ch := range changes {
 				if !changeIDPattern.MatchString(ch) {
 					return exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", ch)
 				}
 			}
 
-			// Rebase into a linear stack: trunk() <- beads[0] <- beads[1] <- ...
-			//
-			// NOTE: --skip-emptied is intentionally omitted here, diverging from
-			// spec §4.1's verb table. --skip-emptied abandons a member that rebases
-			// to empty, which would leave prev=<ch> pointing at a now-nonexistent
-			// change and break the next rebase -o <ch>. jj change-ids are stable
-			// across rebase, so without the flag every member survives and the
-			// linear cursor stays valid; an empty member surfaces downstream rather
-			// than being silently dropped. See ADR weft-hjx.7 (decision bead).
-			prev := "trunk()"
-			stack := make([]map[string]string, 0, len(beads))
-			for i, ch := range changes {
-				if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev); err != nil {
-					return exit.Hardf("jj rebase could not run: %v", err)
-				} else if res.Code != 0 {
-					return exit.Hardf("jj rebase %s failed: %s", ch, strings.TrimSpace(res.Stderr))
+			// Sort change-ids lexicographically: overlapGroups orders groups by
+			// lex-smallest member and keeps each group lex-internally, so its input
+			// must be change-lex (not bead-lex) order. beadOf still maps back.
+			sort.Strings(changes)
+
+			// Partition by file-overlap: two changes can conflict only if they
+			// share a file, so independent groups need never be stacked together.
+			files := map[string][]string{}
+			for _, ch := range changes {
+				fs, err := changeFiles(a.Runner, ch)
+				if err != nil {
+					return err
 				}
-				prev = ch
-				stack = append(stack, map[string]string{"bead": beads[i], "change": ch})
+				files[ch] = fs
+			}
+			grouped := overlapGroups(changes, files)
+
+			// Rebase each group as its own linear sub-stack rooted on trunk();
+			// the cursor resets to trunk() at every group boundary, so no group
+			// becomes an ancestor of another. --skip-emptied stays omitted within
+			// a group so the cursor never points at an abandoned change (ADR weft-hjx.7).
+			groups := make([][]map[string]string, 0, len(grouped))
+			for _, g := range grouped {
+				prev := "trunk()"
+				grp := make([]map[string]string, 0, len(g))
+				for _, ch := range g {
+					if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev); err != nil {
+						return exit.Hardf("jj rebase could not run: %v", err)
+					} else if res.Code != 0 {
+						return exit.Hardf("jj rebase %s failed: %s", ch, strings.TrimSpace(res.Stderr))
+					}
+					prev = ch
+					grp = append(grp, map[string]string{"bead": beadOf[ch], "change": ch})
+				}
+				groups = append(groups, grp)
 			}
 
-			// First-class conflicts are surfaced as data; resolution is seam 4.
-			// The revset is stack-scoped: only report conflicts that belong to this
-			// wave's members, not any pre-existing conflicts elsewhere in the repo.
+			// Stack-scoped conflict detection (unchanged): only conflicts among
+			// this wave's members. Cross-group cascade is now impossible.
 			scopedRevset := "conflicts() & (" + strings.Join(changes, " | ") + ")"
 			res, err := run.JJ(a.Runner, "log", "-r", scopedRevset, "--no-graph", "-T", `change_id.short(12) ++ "\n"`)
 			if err != nil {
@@ -227,34 +252,26 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			if res.Code != 0 {
 				return exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
 			}
-			// Map each conflicted change-id back to its owning bead via the
-			// stack we just built, so the orchestrator can `conflict open <bead>`
-			// (seam 4 §3). paths/lowest_ancestor enrichment is deferred (§8).
-			// F6: conflicts[] uses [{bead,change}] — the actionable orchestrator-input
-			// form (each entry is directly consumable by `conflict open <bead>`),
-			// distinct from resume's observability []string form (see conflictChanges).
+
+			// Rebuild the change→bead map from ALL group members.
 			changeToBead := map[string]string{}
-			for _, e := range stack {
-				changeToBead[e["change"]] = e["bead"]
+			for _, g := range groups {
+				for _, e := range g {
+					changeToBead[e["change"]] = e["bead"]
+				}
 			}
 			conflicts := []map[string]string{}
 			for _, ln := range splitTrimLines(res.Stdout) {
-				// F4: guard against a conflicted change-id not in the integration stack.
-				// A missing key would silently produce bead:"" (misleading for orchestrators).
 				b, ok := changeToBead[ln]
 				if !ok {
-					return exit.Hardf("conflicted change %s is not in the integration stack — cannot map it to a bead", ln)
+					return exit.Hardf("conflicted change %s is not in the integration forest — cannot map it to a bead", ln)
 				}
 				conflicts = append(conflicts, map[string]string{"bead": b, "change": ln})
 			}
 
-			// NOTE (seam-4 envelope deferred): conflicts[] is emitted inside data{} here,
-			// not as a top-level envelope field. The decision on whether conflicts belongs
-			// at the top-level envelope (parity with the resume note in conflictChanges)
-			// is tracked as a deferred seam-4 envelope decision (weft-hjx.6).
-			data := map[string]any{"stack": stack, "conflicts": conflicts}
-			// changes[i] == stack[i]["change"] by construction; reuse directly.
-			text := fmt.Sprintf("integrated %d picks: %s", len(stack), strings.Join(changes, " -> "))
+			data := map[string]any{"groups": groups, "conflicts": conflicts}
+			// changes already holds the woven change-ids in lex order.
+			text := fmt.Sprintf("integrated %d picks in %d group(s): %s", len(changes), len(groups), strings.Join(changes, " "))
 			if len(conflicts) > 0 {
 				ids := make([]string, 0, len(conflicts))
 				for _, c := range conflicts {

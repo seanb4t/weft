@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -251,104 +252,137 @@ func TestShedCleanupForgetFailureIsHardFailure(t *testing.T) {
 	}
 }
 
-func TestShedIntegrateBuildsLinearStack(t *testing.T) {
-	// Two sealed picks; integrate orders them lexicographically (weft-hjx.1.1
-	// before weft-hjx.1.2) and rebases each onto the previous tip, then
-	// reports stack as {bead,change} pairs and no conflicts.
+func TestShedIntegrateBuildsForestByFileOverlap(t *testing.T) {
+	// Four picks, two disjoint overlap pairs:
+	//   cha,chb touch shared.txt  -> one group
+	//   chc,chd touch other.txt   -> another group
+	// integrate must rebase each group rooted on trunk() (cursor resets per group),
+	// never chaining group 2 onto group 1.
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
-		case strings.Contains(j, "bd show weft-hjx.1.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
-		case strings.Contains(j, "bd show weft-hjx.1.1"):
+		case strings.Contains(j, "bd show weft-e.1"):
 			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:cha"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e.3"):
+			return run.Result{Stdout: `[{"title":"c","status":"in_progress","labels":["jj-change:chc"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e.4"):
+			return run.Result{Stdout: `[{"title":"d","status":"in_progress","labels":["jj-change:chd"]}]`, Code: 0}
+		case strings.Contains(j, "diff --name-only -r cha"), strings.Contains(j, "diff --name-only -r chb"):
+			return run.Result{Stdout: "shared.txt\n", Code: 0}
+		case strings.Contains(j, "diff --name-only -r chc"), strings.Contains(j, "diff --name-only -r chd"):
+			return run.Result{Stdout: "other.txt\n", Code: 0}
 		case strings.Contains(j, "log -r conflicts()"):
-			return run.Result{Stdout: "", Code: 0} // clean
+			return run.Result{Stdout: "", Code: 0}
 		default: // jj rebase
 			return run.Result{Code: 0}
 		}
 	}}
-	// Pass members out of lexical order to prove sorting.
-	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
+	out, err := newTestCmd(r, "shed", "integrate", "weft-e.4", "weft-e.3", "weft-e.2", "weft-e.1", "--json")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	// First rebase: cha onto trunk(); second: chb onto cha (lexicographic order).
 	var rebases [][]string
 	for _, c := range r.calls {
 		if len(c) >= 2 && c[0] == "jj" && contains(c, "rebase") {
 			rebases = append(rebases, c)
 		}
 	}
-	if len(rebases) != 2 {
-		t.Fatalf("want 2 rebases, got %d: %v", len(rebases), rebases)
+	if len(rebases) != 4 {
+		t.Fatalf("want 4 rebases, got %d: %v", len(rebases), rebases)
 	}
+	// Group 1 (cha,chb): cha onto trunk(), chb onto cha.
 	if !contains(rebases[0], "cha") || !contains(rebases[0], "trunk()") {
-		t.Errorf("first rebase should be cha onto trunk(): %v", rebases[0])
+		t.Errorf("rebase[0] should be cha onto trunk(): %v", rebases[0])
 	}
 	if !contains(rebases[1], "chb") || !contains(rebases[1], "cha") {
-		t.Errorf("second rebase should be chb onto cha: %v", rebases[1])
+		t.Errorf("rebase[1] should be chb onto cha: %v", rebases[1])
 	}
-	// Stack entries must be {bead,change} pairs — both bead-ids and change-ids present.
+	// Group 2 (chc,chd): chc onto trunk() (NOT onto chb — cursor reset), chd onto chc.
+	if !contains(rebases[2], "chc") || !contains(rebases[2], "trunk()") {
+		t.Errorf("rebase[2] should be chc onto trunk() (group boundary reset): %v", rebases[2])
+	}
+	if contains(rebases[2], "chb") {
+		t.Errorf("group 2 must not chain onto group 1's tip (chb): %v", rebases[2])
+	}
+	if !contains(rebases[3], "chd") || !contains(rebases[3], "chc") {
+		t.Errorf("rebase[3] should be chd onto chc: %v", rebases[3])
+	}
+	// Envelope: groups present with {bead,change} pairs; no flat stack field.
 	s := out.String()
-	if !strings.Contains(s, `"bead": "weft-hjx.1.1"`) || !strings.Contains(s, `"change": "cha"`) {
-		t.Errorf("stack missing weft-hjx.1.1/cha pair: %q", s)
+	if !strings.Contains(s, `"groups"`) {
+		t.Errorf("envelope must carry data.groups: %q", s)
 	}
-	if !strings.Contains(s, `"bead": "weft-hjx.1.2"`) || !strings.Contains(s, `"change": "chb"`) {
-		t.Errorf("stack missing weft-hjx.1.2/chb pair: %q", s)
+	if strings.Contains(s, `"stack"`) {
+		t.Errorf("data.stack must be gone (replaced by groups): %q", s)
 	}
-	// Conflicts revset must be stack-scoped, not bare conflicts().
-	var sawScopedConflicts bool
-	for _, c := range r.calls {
-		j := strings.Join(c, " ")
-		if strings.Contains(j, "conflicts() & (") {
-			sawScopedConflicts = true
+	for _, want := range []string{`"change": "cha"`, `"change": "chb"`, `"change": "chc"`, `"change": "chd"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("groups missing %s: %q", want, s)
 		}
-	}
-	if !sawScopedConflicts {
-		t.Errorf("conflicts revset must be scoped (conflicts() & (...)), saw calls: %v", r.calls)
 	}
 }
 
-func TestShedIntegrateSurfacesConflicts(t *testing.T) {
-	// chb comes back as conflicted; integrate still exits 0 with conflicts in data.
+func TestShedIntegrateConflictMapsToBeadAcrossGroups(t *testing.T) {
+	// chd (group 2 tail) comes back conflicted; integrate must still map it to
+	// its bead via the rebuilt changeToBead and exit 0.
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {
-		case strings.Contains(j, "bd show weft-hjx.1.2"):
-			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
-		case strings.Contains(j, "bd show weft-hjx.1.1"):
+		case strings.Contains(j, "bd show weft-e.1"):
 			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:cha"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e.2"):
+			return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e.3"):
+			return run.Result{Stdout: `[{"title":"c","status":"in_progress","labels":["jj-change:chc"]}]`, Code: 0}
+		case strings.Contains(j, "bd show weft-e.4"):
+			return run.Result{Stdout: `[{"title":"d","status":"in_progress","labels":["jj-change:chd"]}]`, Code: 0}
+		case strings.Contains(j, "diff --name-only -r cha"), strings.Contains(j, "diff --name-only -r chb"):
+			return run.Result{Stdout: "shared.txt\n", Code: 0}
+		case strings.Contains(j, "diff --name-only -r chc"), strings.Contains(j, "diff --name-only -r chd"):
+			return run.Result{Stdout: "other.txt\n", Code: 0}
 		case strings.Contains(j, "log -r conflicts()"):
-			return run.Result{Stdout: "chb\n", Code: 0} // chb conflicted
+			return run.Result{Stdout: "chd\n", Code: 0}
 		default:
 			return run.Result{Code: 0}
 		}
 	}}
-	out, err := newTestCmd(r, "shed", "integrate", "weft-hjx.1.2", "weft-hjx.1.1", "--json")
+	out, err := newTestCmd(r, "shed", "integrate", "weft-e.1", "weft-e.2", "weft-e.3", "weft-e.4", "--json")
 	if err != nil {
-		t.Fatalf("conflicts must not cause a non-zero exit (verdict is data): %v", err)
+		t.Fatalf("conflicts must not cause non-zero exit: %v", err)
 	}
 	s := out.String()
-	// Stack still has both {bead,change} pairs.
-	if !strings.Contains(s, `"bead": "weft-hjx.1.1"`) || !strings.Contains(s, `"change": "cha"`) {
-		t.Errorf("stack missing weft-hjx.1.1/cha: %q", s)
+	if !strings.Contains(s, `"bead": "weft-e.4"`) || !strings.Contains(s, `"change": "chd"`) {
+		t.Errorf("conflict chd must map to bead weft-e.4 in conflicts[]: %q", s)
 	}
-	if !strings.Contains(s, `"bead": "weft-hjx.1.2"`) || !strings.Contains(s, `"change": "chb"`) {
-		t.Errorf("stack missing weft-hjx.1.2/chb: %q", s)
-	}
-	if !strings.Contains(s, "chb") {
-		t.Errorf("conflicted chb must appear in output: %q", s)
-	}
-	// Conflicts revset must be scoped.
-	var sawScopedConflicts bool
-	for _, c := range r.calls {
-		if strings.Contains(strings.Join(c, " "), "conflicts() & (") {
-			sawScopedConflicts = true
+}
+
+func TestShedIntegrateEnvelopeAlwaysHasGroupsAndConflicts(t *testing.T) {
+	// Single clean pick: groups and conflicts must both be present arrays (never null).
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "bd show weft-e.1"):
+			return run.Result{Stdout: `[{"title":"a","status":"in_progress","labels":["jj-change:cha"]}]`, Code: 0}
+		case strings.Contains(j, "diff --name-only -r cha"):
+			return run.Result{Stdout: "a.txt\n", Code: 0}
+		case strings.Contains(j, "log -r conflicts()"):
+			return run.Result{Stdout: "", Code: 0}
+		default:
+			return run.Result{Code: 0}
 		}
+	}}
+	out, err := newTestCmd(r, "shed", "integrate", "weft-e.1", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
 	}
-	if !sawScopedConflicts {
-		t.Errorf("conflicts revset must be scoped; calls: %v", r.calls)
+	s := out.String()
+	if !strings.Contains(s, `"groups"`) || !strings.Contains(s, `"conflicts"`) {
+		t.Errorf("envelope must always carry groups + conflicts: %q", s)
+	}
+	if strings.Contains(s, `"groups": null`) || strings.Contains(s, `"conflicts": null`) {
+		t.Errorf("groups/conflicts must be [] not null: %q", s)
 	}
 }
 
@@ -557,5 +591,33 @@ func TestShedIntegrateConflictUnknownChangeErrors(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "chz") {
 		t.Errorf("error should name the unknown change-id, got %v", err)
+	}
+}
+
+func TestChangeFilesParsesNameOnly(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "diff --name-only -r cha") {
+			return run.Result{Stdout: "a.txt\ndir/b.txt\n", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	got, err := changeFiles(r, "cha")
+	if err != nil {
+		t.Fatalf("changeFiles: %v", err)
+	}
+	want := []string{"a.txt", "dir/b.txt"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("changeFiles = %v, want %v", got, want)
+	}
+}
+
+func TestChangeFilesNonZeroIsHardFailure(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		return run.Result{Code: 1, Stderr: "jj: no such revision"}
+	}}
+	_, err := changeFiles(r, "chx")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("jj diff failure must be hard (exit 2), got %d (err=%v)", got, err)
 	}
 }
