@@ -155,6 +155,17 @@ func (a *App) newShedIsolateCmd() *cobra.Command {
 	}
 }
 
+// shedPick is one entry in the shed integrate groups/conflicts envelope: a
+// bead id paired with its woven jj change-id. A peer of finishPick (finish.go)
+// — not a reuse of it because finishPick carries a Title field that would
+// serialise as "title":"" and break byte-identity with the previous
+// map[string]string output ("bead" and "change" keys only, alphabetical order
+// matching struct-declaration order here).
+type shedPick struct {
+	Bead   string `json:"bead"`
+	Change string `json:"change"`
+}
+
 // changeFiles returns the set of files a change touches, via
 // `jj diff --name-only -r <change>` (verified present in jj 0.42). The caller
 // MUST have validated the change-id against changeIDPattern before calling, as
@@ -226,10 +237,10 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			// the cursor resets to trunk() at every group boundary, so no group
 			// becomes an ancestor of another. --skip-emptied stays omitted within
 			// a group so the cursor never points at an abandoned change (ADR weft-hjx.7).
-			groups := make([][]map[string]string, 0, len(grouped))
+			groups := make([][]shedPick, 0, len(grouped))
 			for _, g := range grouped {
 				prev := "trunk()"
-				grp := make([]map[string]string, 0, len(g))
+				grp := make([]shedPick, 0, len(g))
 				for _, ch := range g {
 					if res, err := run.JJ(a.Runner, "rebase", "-s", ch, "-o", prev); err != nil {
 						return exit.Hardf("jj rebase could not run: %v", err)
@@ -237,7 +248,7 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 						return exit.Hardf("jj rebase %s failed: %s", ch, strings.TrimSpace(res.Stderr))
 					}
 					prev = ch
-					grp = append(grp, map[string]string{"bead": beadOf[ch], "change": ch})
+					grp = append(grp, shedPick{Bead: beadOf[ch], Change: ch})
 				}
 				groups = append(groups, grp)
 			}
@@ -257,16 +268,16 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			changeToBead := map[string]string{}
 			for _, g := range groups {
 				for _, e := range g {
-					changeToBead[e["change"]] = e["bead"]
+					changeToBead[e.Change] = e.Bead
 				}
 			}
-			conflicts := []map[string]string{}
+			conflicts := []shedPick{}
 			for _, ln := range splitTrimLines(res.Stdout) {
 				b, ok := changeToBead[ln]
 				if !ok {
 					return exit.Hardf("conflicted change %s is not in the integration forest — cannot map it to a bead", ln)
 				}
-				conflicts = append(conflicts, map[string]string{"bead": b, "change": ln})
+				conflicts = append(conflicts, shedPick{Bead: b, Change: ln})
 			}
 
 			data := map[string]any{"groups": groups, "conflicts": conflicts}
@@ -275,7 +286,7 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 			if len(conflicts) > 0 {
 				ids := make([]string, 0, len(conflicts))
 				for _, c := range conflicts {
-					ids = append(ids, c["change"])
+					ids = append(ids, c.Change)
 				}
 				text += fmt.Sprintf("  [%d conflicted: %s]", len(conflicts), strings.Join(ids, " "))
 			}
