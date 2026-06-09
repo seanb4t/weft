@@ -119,6 +119,38 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 		t.Fatalf("conflicts = %d, want exactly 2 (p2 + p4 colliders, no cross-group cascade): %s",
 			len(integData.Conflicts), integ.Data)
 	}
+
+	// No-cascade invariant — explicit ref check (structural proof, not just count).
+	//
+	// The invariant holds because the two collider pairs touch disjoint files:
+	//   p2a/p2b → collide_h.txt   (heal pair)
+	//   p4a/p4b → collide_e.txt   (escalate pair)
+	//
+	// Premise: assert the fixture actually satisfies file-disjointness so a
+	// future refactor that accidentally aliases the two pairs' files fails loudly
+	// here, at the premise, rather than silently at the conclusion.
+	{
+		g1Files := fileSetForGroup("p2a", "p2b")
+		g2Files := fileSetForGroup("p4a", "p4b")
+		for f := range g1Files {
+			if g2Files[f] {
+				t.Fatalf("fixture premise violated: file %q appears in both collider groups (p2a/p2b and p4a/p4b) — no-cascade invariant would be untestable", f)
+			}
+		}
+	}
+	// Conclusion: every reported conflict must belong to a known collider ref.
+	// This makes the no-cascade guarantee explicit (the default: fatal in the
+	// resolution switch below is a secondary guard, not the primary proof).
+	{
+		colliderRefs := map[string]bool{"p2a": true, "p2b": true, "p4a": true, "p4b": true}
+		for _, c := range integData.Conflicts {
+			ref := refOf[c.Bead]
+			if !colliderRefs[ref] {
+				t.Fatalf("conflict bead %s has ref %q which is not a collider (p2a/p2b/p4a/p4b) — cascade leaked across groups: %s",
+					c.Bead, ref, integ.Data)
+			}
+		}
+	}
 	// The wave is woven as a forest, not one linear stack: the two collider pairs
 	// land in separate overlap groups (alongside the independent singletons), so
 	// there is more than one group and every pick appears in exactly one group.
@@ -370,6 +402,19 @@ func (r *scratchRepo) healAllConflicts(t *testing.T, resolveDir string) {
 		// Exit 0 with output means conflicts are still present.
 		t.Fatalf("healAllConflicts: jj resolve --list still reports conflicts after write+snapshot in %s:\n%s", resolveDir, listOut)
 	}
+}
+
+// fileSetForGroup returns the union of files written by the named refs (via
+// pickFiles). Used to assert that the two collider groups are file-disjoint —
+// the structural premise that makes the no-cascade invariant testable.
+func fileSetForGroup(refs ...string) map[string]bool {
+	files := make(map[string]bool)
+	for _, ref := range refs {
+		for f := range pickFiles(ref) {
+			files[f] = true
+		}
+	}
+	return files
 }
 
 // assertBeadHasLabel verifies the bead carries the expected label via bd show --json.
