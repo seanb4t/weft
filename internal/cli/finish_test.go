@@ -778,3 +778,17 @@ func TestCollapseClosedPicksEmptyIsNoop(t *testing.T) {
 		t.Errorf("empty collapse must issue no jj calls: %v", r.calls)
 	}
 }
+
+func TestFinishReconcileMergeBranchLeavesParkedEscalatedAlone(t *testing.T) {
+	// Merge-commit style; a parked escalated change (chPark) is a trunk() sibling,
+	// not an ancestor of @. Reconcile must not move it.
+	r := mergedReconcileRunner(true, func(j string) (run.Result, bool) {
+		if strings.Contains(j, "rebase") && strings.Contains(j, "chPark") {
+			t.Errorf("reconcile must not rebase the parked escalated change: %s", j)
+		}
+		return run.Result{}, false
+	})
+	if _, err := newTestCmd(r, "finish", "reconcile", "weft-e", "--json"); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+}
