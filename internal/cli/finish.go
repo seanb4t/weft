@@ -87,6 +87,55 @@ func assemblePRBody(epic, title string, picks []finishPick) string {
 	return b.String()
 }
 
+// collapseClosedPicks rebases the epic's closed picks into a single linear line
+// rooted on trunk(), so `finish open`'s `bookmark set -r @` + push ship exactly
+// the landed work. Picks are placed ancestors-first (a healed upper member's
+// content is parent-relative, so its lower member must remain its ancestor).
+// An escalated/open pick is not in `picks`, so it is never moved and is left
+// parked as a trunk() child, off the @-line.
+func collapseClosedPicks(r run.Runner, picks []finishPick) error {
+	if len(picks) == 0 {
+		return nil
+	}
+	revs := make([]string, 0, len(picks))
+	for _, p := range picks {
+		if !changeIDPattern.MatchString(p.Change) {
+			return exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", p.Change)
+		}
+		revs = append(revs, p.Change)
+	}
+	// Ancestors-first order over the closed changes (verified jj 0.42 idiom,
+	// Step 1): jj has no `reverse()` revset function — ancestors-first ordering
+	// is the `--reversed` log flag. It lists a chain root-first; independent
+	// groups interleave but each group's internal order is preserved.
+	res, err := run.JJ(r, "log", "-r", strings.Join(revs, " | "), "--no-graph", "--reversed", "-T", `change_id.short(12) ++ "\n"`)
+	if err != nil {
+		return exit.Hardf("jj log (collapse order) could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return exit.Hardf("jj log (collapse order) failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	prev := "trunk()"
+	var top string
+	for _, ch := range splitTrimLines(res.Stdout) {
+		if res, err := run.JJ(r, "rebase", "-r", ch, "-o", prev); err != nil {
+			return exit.Hardf("jj rebase could not run: %v", err)
+		} else if res.Code != 0 {
+			return exit.Hardf("jj rebase -r %s failed: %s", ch, strings.TrimSpace(res.Stderr))
+		}
+		prev = ch
+		top = ch
+	}
+	if top != "" {
+		if res, err := run.JJ(r, "new", top); err != nil {
+			return exit.Hardf("jj new could not run: %v", err)
+		} else if res.Code != 0 {
+			return exit.Hardf("jj new %s failed: %s", top, strings.TrimSpace(res.Stderr))
+		}
+	}
+	return nil
+}
+
 func (a *App) newFinishCmd() *cobra.Command {
 	finish := &cobra.Command{Use: "finish", Short: "Ship an epic: open a PR, then reconcile after merge (spec §6 / seam 6)"}
 	finish.AddCommand(a.newFinishOpenCmd(), a.newFinishReconcileCmd())
@@ -195,6 +244,12 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 			if dryRun {
 				return Emit(cmd, "finish.open", openData(false, "", false, true),
 					fmt.Sprintf("[dry-run] would push %s and open PR:\n%s", epic, body))
+			}
+
+			// Collapse the closed picks into one @-tipped line (forest → line),
+			// parking any escalated pick on trunk(), so the push ships only landed work.
+			if err := collapseClosedPicks(a.Runner, picks); err != nil {
+				return err
 			}
 
 			// Set the bookmark at the working-copy tip and push.

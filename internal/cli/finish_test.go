@@ -722,3 +722,59 @@ func TestIsHTTPNotFoundRequiresNumericMarker(t *testing.T) {
 		}
 	}
 }
+
+func TestCollapseClosedPicksLinearizesInAncestorOrderExcludingEscalated(t *testing.T) {
+	// Closed picks cha (group A base), chb (group A tail, healed), chc (group B base).
+	// Ancestor-first order is provided by the topo query; collapse must rebase -r
+	// each closed change onto the advancing tip and must NOT touch the escalated
+	// change chd (not in the closed set).
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		// Topo-order query returns the closed changes ancestors-first.
+		if strings.Contains(j, "log -r") && strings.Contains(j, "cha") && strings.Contains(j, "--reversed") {
+			return run.Result{Stdout: "cha\nchb\nchc\n", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	picks := []finishPick{
+		{Bead: "weft-e.1", Title: "a", Change: "cha"},
+		{Bead: "weft-e.2", Title: "b", Change: "chb"},
+		{Bead: "weft-e.3", Title: "c", Change: "chc"},
+	}
+	if err := collapseClosedPicks(r, picks); err != nil {
+		t.Fatalf("collapseClosedPicks: %v", err)
+	}
+	var rebases [][]string
+	for _, c := range r.calls {
+		if len(c) >= 2 && c[0] == "jj" && contains(c, "rebase") && contains(c, "-r") {
+			rebases = append(rebases, c)
+		}
+	}
+	if len(rebases) != 3 {
+		t.Fatalf("want 3 per-change rebases (cha,chb,chc), got %d: %v", len(rebases), rebases)
+	}
+	if !contains(rebases[0], "cha") || !contains(rebases[0], "trunk()") {
+		t.Errorf("first collapse rebase should be cha onto trunk(): %v", rebases[0])
+	}
+	if !contains(rebases[1], "chb") || !contains(rebases[1], "cha") {
+		t.Errorf("second should be chb onto cha: %v", rebases[1])
+	}
+	if !contains(rebases[2], "chc") || !contains(rebases[2], "chb") {
+		t.Errorf("third should be chc onto chb: %v", rebases[2])
+	}
+	for _, c := range r.calls {
+		if contains(c, "chd") {
+			t.Errorf("escalated chd must never be rebased: %v", c)
+		}
+	}
+}
+
+func TestCollapseClosedPicksEmptyIsNoop(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result { return run.Result{Code: 0} }}
+	if err := collapseClosedPicks(r, nil); err != nil {
+		t.Fatalf("empty collapse must be a no-op: %v", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("empty collapse must issue no jj calls: %v", r.calls)
+	}
+}
