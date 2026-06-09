@@ -155,6 +155,21 @@ func (a *App) newShedIsolateCmd() *cobra.Command {
 	}
 }
 
+// changeFiles returns the set of files a change touches, via
+// `jj diff --name-only -r <change>` (verified present in jj 0.42). The caller
+// MUST have validated the change-id against changeIDPattern before calling, as
+// it is interpolated into the -r revset position.
+func changeFiles(r run.Runner, change string) ([]string, error) {
+	res, err := run.JJ(r, "diff", "--name-only", "-r", change)
+	if err != nil {
+		return nil, exit.Hardf("jj diff --name-only could not run: %v", err)
+	}
+	if res.Code != 0 {
+		return nil, exit.Hardf("jj diff --name-only %s failed: %s", change, strings.TrimSpace(res.Stderr))
+	}
+	return splitTrimLines(res.Stdout), nil
+}
+
 func (a *App) newShedIntegrateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "integrate <bead-id>...",

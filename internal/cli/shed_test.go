@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -557,5 +558,33 @@ func TestShedIntegrateConflictUnknownChangeErrors(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "chz") {
 		t.Errorf("error should name the unknown change-id, got %v", err)
+	}
+}
+
+func TestChangeFilesParsesNameOnly(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "diff --name-only -r cha") {
+			return run.Result{Stdout: "a.txt\ndir/b.txt\n", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	got, err := changeFiles(r, "cha")
+	if err != nil {
+		t.Fatalf("changeFiles: %v", err)
+	}
+	want := []string{"a.txt", "dir/b.txt"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("changeFiles = %v, want %v", got, want)
+	}
+}
+
+func TestChangeFilesNonZeroIsHardFailure(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		return run.Result{Code: 1, Stderr: "jj: no such revision"}
+	}}
+	_, err := changeFiles(r, "chx")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("jj diff failure must be hard (exit 2), got %d (err=%v)", got, err)
 	}
 }
