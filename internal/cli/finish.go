@@ -104,10 +104,12 @@ func collapseClosedPicks(r run.Runner, picks []finishPick) error {
 		}
 		revs = append(revs, p.Change)
 	}
-	// Ancestors-first order over the closed changes (verified jj 0.42 idiom,
-	// Step 1): jj has no `reverse()` revset function — ancestors-first ordering
-	// is the `--reversed` log flag. It lists a chain root-first; independent
-	// groups interleave but each group's internal order is preserved.
+	// Ancestors-first order over the closed changes: jj has no `reverse()`
+	// revset function — ancestors-first ordering is the `--reversed` log flag.
+	// Within each dependency chain it guarantees ancestor-before-descendant;
+	// inter-group order is unspecified and irrelevant because the loop
+	// linearizes all changes onto a single chain — correctness requires only
+	// that each change's own in-set ancestors precede it.
 	res, err := run.JJ(r, "log", "-r", strings.Join(revs, " | "), "--no-graph", "--reversed", "-T", `change_id.short(12) ++ "\n"`)
 	if err != nil {
 		return exit.Hardf("jj log (collapse order) could not run: %v", err)

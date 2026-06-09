@@ -309,6 +309,21 @@ func TestShedIntegrateBuildsForestByFileOverlap(t *testing.T) {
 	if !contains(rebases[3], "chd") || !contains(rebases[3], "chc") {
 		t.Errorf("rebase[3] should be chd onto chc: %v", rebases[3])
 	}
+	// sawScopedConflicts: the jj log call that queries conflicts must use the
+	// scoped form 'conflicts() & (...)' — not bare 'conflicts()' — so that only
+	// this wave's members are inspected (spec §4.1 guard).
+	sawScopedConflicts := false
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "log") && strings.Contains(j, "conflicts() & (") {
+			sawScopedConflicts = true
+			break
+		}
+	}
+	if !sawScopedConflicts {
+		t.Errorf("integrate must issue a scoped 'conflicts() & (...)' revset, not bare 'conflicts()'; calls: %v", r.calls)
+	}
+
 	// Envelope: groups present with {bead,change} pairs; no flat stack field.
 	s := out.String()
 	if !strings.Contains(s, `"groups"`) {
@@ -326,7 +341,7 @@ func TestShedIntegrateBuildsForestByFileOverlap(t *testing.T) {
 
 func TestShedIntegrateConflictMapsToBeadAcrossGroups(t *testing.T) {
 	// chd (group 2 tail) comes back conflicted; integrate must still map it to
-	// its bead via the rebuilt changeToBead and exit 0.
+	// its bead via beadOf and exit 0.
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {

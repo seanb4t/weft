@@ -209,8 +209,7 @@ un-cascades *within* the group —
 and jj conflict-simplifies its in-group descendants, so resolving lowest-first
 clears the cascades above it. An escalated change is never squashed, so it
 leaves its own group's tail conflicted for a human; because groups are
-independent, it cannot affect any other group's picks, which land normally. The
-fixpoint is per-group and needs no global ordering. An escalated pick is parked
+independent, it cannot affect any other group's picks, which land normally. An escalated pick is parked
 on `trunk()` by `finish open` (excluded from the collapsed line), not reordered;
 `weft resume` surfaces it (and anything stacked above it in its group) as still
 conflicted and unlanded.
