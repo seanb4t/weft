@@ -306,7 +306,7 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 	{
 		cmd := exec.Command("jj", "--no-pager", "commit", "-m", "chore: test harness state (weave E2E)")
 		cmd.Dir = r.root
-		cmd.Env = os.Environ()
+		cmd.Env = append(os.Environ(), "BEADS_DIR="+r.beadsDir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("jj commit (pre-finish cleanup): %v\n%s", err, out)
 		}
