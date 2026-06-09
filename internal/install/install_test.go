@@ -317,11 +317,11 @@ func TestInstallNonDuplicateAddFailureDoesNotRemove(t *testing.T) {
 // pass through unquoted.
 func TestShellQuoteDryRunArgs(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"seanb4t/weft@v1.4.0", "seanb4t/weft@v1.4.0"}, // clean → unquoted
-		{"/home/me/weft", "/home/me/weft"},                         // clean path → unquoted
-		{"/home/My Clone/weft", "'/home/My Clone/weft'"},           // space → single-quoted
-		{"a'b", `'a'\''b'`},                                        // embedded quote escaped
-		{"", "''"},                                                 // empty → ''
+		{"seanb4t/weft@v1.4.0", "seanb4t/weft@v1.4.0"},   // clean → unquoted
+		{"/home/me/weft", "/home/me/weft"},               // clean path → unquoted
+		{"/home/My Clone/weft", "'/home/My Clone/weft'"}, // space → single-quoted
+		{"a'b", `'a'\''b'`},                              // embedded quote escaped
+		{"", "''"},                                       // empty → ''
 	}
 	for _, c := range cases {
 		if got := shellQuote(c.in); got != c.want {

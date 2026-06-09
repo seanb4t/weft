@@ -12,7 +12,9 @@ import (
 )
 
 // Version is the engine version. Release builds set it via
-//   -ldflags "-X github.com/seanb4t/weft/internal/cli.Version=<X.Y.Z>"
+//
+//	-ldflags "-X github.com/seanb4t/weft/internal/cli.Version=<X.Y.Z>"
+//
 // (GoReleaser injects the tag without its leading "v"). When unset — a
 // `go install …@vX.Y.Z` or a local `go build` — it is derived from the module
 // build info. The result is a clean "X.Y.Z" for any released build and the
