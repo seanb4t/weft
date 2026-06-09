@@ -771,6 +771,16 @@ func TestCollapseClosedPicksLinearizesInAncestorOrderExcludingEscalated(t *testi
 			t.Errorf("escalated chd must never be rebased: %v", c)
 		}
 	}
+	var newTop []string
+	for _, c := range r.calls {
+		if len(c) >= 2 && c[0] == "jj" && contains(c, "new") && contains(c, "chc") {
+			newTop = c
+			break
+		}
+	}
+	if newTop == nil {
+		t.Errorf("trailing jj new chc call not found; @ would not be positioned at collapsed tip: %v", r.calls)
+	}
 }
 
 func TestCollapseClosedPicksEmptyIsNoop(t *testing.T) {
