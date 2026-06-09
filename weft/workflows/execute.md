@@ -160,15 +160,17 @@ on its `data.pass` identically.
 weft shed integrate <bead>...
 ```
 
-Stacks the wave's sealed picks in dependency order (tiebreak: lexicographic
-bead-id), rebasing each change onto the previous tip. Emits:
+Partitions the wave's sealed picks by file overlap and rebases each overlap
+group as its own sub-stack rooted on `trunk()` — two picks that touch no common
+file can never conflict, so independent groups are never stacked together.
+Within a group, picks are ordered lexicographically by change-id. Emits:
 
 ```json
 {
   "ok": true,
   "verb": "shed.integrate",
   "data": {
-    "stack": [{"bead": "...", "change": "..."}],
+    "groups": [[{"bead": "...", "change": "..."}], ...],
     "conflicts": [{"bead": "...", "change": "..."}]
   }
 }
@@ -180,11 +182,13 @@ resulting change; the orchestrator consumes `data.conflicts` and routes to
 step 6 for each conflicted entry. Picks not in `data.conflicts` proceed
 directly to step 7.
 
-**Cascade semantics:** `weft shed integrate` stacks the wave linearly, so a
-first-class jj conflict in one change cascades to every change stacked above
-it — `data.conflicts` may therefore list cascade-conflicted descendants in
-addition to the picks that genuinely collided. The integrate-time snapshot is
-not the final work list.
+**Group semantics:** `weft shed integrate` builds a forest — each file-overlap
+group is its own `trunk()`-rooted sub-stack. A first-class jj conflict is
+therefore confined to the group whose picks share files: it can cascade to
+changes stacked above it *within that group*, but never across groups.
+`data.conflicts` may list in-group cascade-conflicted descendants in addition to
+the picks that genuinely collided; picks in other groups are unaffected. The
+integrate-time snapshot is not the final work list.
 
 ### Step 6 — Resolve conflicts
 
@@ -196,17 +200,20 @@ clear the cascade conflicts of everything above it. After each finalize,
 consult `data.remaining_conflicts` (and/or `weft resume`'s `data.conflicts`)
 for what is still conflicted, then resolve the next.
 
-**Escalation ordering:** `weft shed integrate` stacks the wave in lexicographic
-bead-id order — this is engine-fixed; the caller cannot choose stack position.
-A conflict (genuine or cascade) on a change leaves every change stacked above it
-conflicted until the lower one is resolved. Healing un-cascades: `weft conflict
-finalize` squashes the resolution into the conflicted ancestor and jj
-conflict-simplifies descendants, so resolving lowest-first clears cascades above
-it. An escalated change is never squashed, so it permanently cascade-conflicts
-every change lexicographically above it; those picks cannot land until a human
-resolves the escalation. That is the expected terminal state — `weft resume`
-surfaces the escalated pick (and anything stacked above it) as still conflicted
-and unlanded.
+**Per-group fixpoint:** one `integrate` yields a forest with conflicts confined
+to file-overlap groups, so there is no global stack order to manage and no need
+to defer escalated picks to the end of one linear stack. Resolve each group's
+conflict independently, lowest-change-first within the group: healing
+un-cascades *within* the group —
+`weft conflict finalize` squashes the resolution into the conflicted ancestor
+and jj conflict-simplifies its in-group descendants, so resolving lowest-first
+clears the cascades above it. An escalated change is never squashed, so it
+leaves its own group's tail conflicted for a human; because groups are
+independent, it cannot affect any other group's picks, which land normally. The
+fixpoint is per-group and needs no global ordering. An escalated pick is parked
+on `trunk()` by `finish open` (excluded from the collapsed line), not reordered;
+`weft resume` surfaces it (and anything stacked above it in its group) as still
+conflicted and unlanded.
 
 **a. Open the conflict:**
 ```
