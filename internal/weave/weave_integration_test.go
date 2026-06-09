@@ -102,7 +102,10 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 	// --- Step 5: integrate the WHOLE wave (one call) ---
 	integ := r.runWeft(t, "", append([]string{"shed", "integrate"}, wave...)...)
 	var integData struct {
-		Groups    [][]struct{ Bead, Change string } `json:"groups"`
+		Groups [][]struct {
+			Bead   string `json:"bead"`
+			Change string `json:"change"`
+		} `json:"groups"`
 		Conflicts []struct {
 			Bead   string `json:"bead"`
 			Change string `json:"change"`

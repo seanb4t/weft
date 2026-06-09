@@ -86,6 +86,10 @@ func finishPreflightRunner(over func(j string) (run.Result, bool)) *routeRunner 
 			return run.Result{Stdout: "The working copy has no changes.\n", Code: 0}
 		case strings.Contains(j, "log -r trunk()..@"):
 			return run.Result{Stdout: "cha\n", Code: 0}
+		case strings.Contains(j, "--reversed"):
+			// collapseClosedPicks ancestors-first order query — the single fixture
+			// pick's change-id (one line, matching the one closed pick `cha`).
+			return run.Result{Stdout: "cha\n", Code: 0}
 		case strings.Contains(j, "git remote list"):
 			return run.Result{Stdout: "origin https://github.com/o/r (git)\n", Code: 0}
 		case strings.Contains(j, "auth status"):

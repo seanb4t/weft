@@ -115,9 +115,23 @@ func collapseClosedPicks(r run.Runner, picks []finishPick) error {
 	if res.Code != 0 {
 		return exit.Hardf("jj log (collapse order) failed: %s", strings.TrimSpace(res.Stderr))
 	}
+	// Every closed pick must come back from the order query; a short result means
+	// the revset silently dropped a change (e.g. a stale/abandoned change-id), and
+	// proceeding would push an uncollapsed forest. Fail loudly instead.
+	lines := splitTrimLines(res.Stdout)
+	if len(lines) != len(revs) {
+		return exit.Hardf("jj log (collapse order) returned %d change-ids, want %d (closed picks): %q",
+			len(lines), len(revs), res.Stdout)
+	}
 	prev := "trunk()"
 	var top string
-	for _, ch := range splitTrimLines(res.Stdout) {
+	for _, ch := range lines {
+		// Re-validate at the interpolation point: `ch` came from jj's stdout, not
+		// directly from the already-validated `revs`, so guard before it enters the
+		// `rebase -r` revset (and, as `top`, the trailing `jj new`).
+		if !changeIDPattern.MatchString(ch) {
+			return exit.Hardf("refusing to interpolate unsafe change-id %q into a revset", ch)
+		}
 		if res, err := run.JJ(r, "rebase", "-r", ch, "-o", prev); err != nil {
 			return exit.Hardf("jj rebase could not run: %v", err)
 		} else if res.Code != 0 {
@@ -189,13 +203,12 @@ func (a *App) finishOpenPreflight(epic string) ([]finishPick, error) {
 	if !strings.Contains(res.Stdout, "origin") {
 		return nil, exit.Invocationf("no 'origin' remote configured — cannot push %s", epic)
 	}
-	// 4. gh authenticated (Code!=0 is user-fixable → Invocation, not Hard).
-	if ares, err := run.GH(a.Runner, "auth", "status"); err != nil {
-		return nil, exit.Hardf("gh auth status could not run (is gh installed?): %v", err)
-	} else if ares.Code != 0 {
-		return nil, exit.Invocationf("gh is not authenticated — run `gh auth login`")
-	}
-	// 5. Empty-epic guard (§5): refuse rather than open an empty PR.
+	// gh authentication is NOT checked here: `finish open --dry-run` previews the
+	// push plan + PR body without ever invoking gh, so requiring auth would make a
+	// read-only preview fail in unauthenticated environments (e.g. CI). The gh auth
+	// gate runs on the real ship path only (see newFinishOpenCmd, after the
+	// dry-run early return).
+	// 4. Empty-epic guard (§5): refuse rather than open an empty PR.
 	picks, err := closedPicks(a.Runner, epic)
 	if err != nil {
 		return nil, err
@@ -246,14 +259,26 @@ func (a *App) newFinishOpenCmd() *cobra.Command {
 					fmt.Sprintf("[dry-run] would push %s and open PR:\n%s", epic, body))
 			}
 
-			// Collapse the closed picks into one @-tipped line (forest → line),
-			// parking any escalated pick on trunk(), so the push ships only landed work.
+			// gh must be authenticated to open the PR (real ship path only; a
+			// dry-run never reaches here). Code!=0 is user-fixable → Invocation.
+			if ares, err := run.GH(a.Runner, "auth", "status"); err != nil {
+				return exit.Hardf("gh auth status could not run (is gh installed?): %v", err)
+			} else if ares.Code != 0 {
+				return exit.Invocationf("gh is not authenticated — run `gh auth login`")
+			}
+
+			// Collapse the closed picks into one line rooted on trunk() (forest →
+			// line), parking any escalated pick on trunk(), so the push ships only
+			// landed work. collapseClosedPicks ends with `jj new <top>`, leaving @
+			// an empty change ABOVE the collapsed tip — so the bookmark is set at
+			// @- (the described tip), never the empty @ (jj refuses to push a
+			// no-description commit).
 			if err := collapseClosedPicks(a.Runner, picks); err != nil {
 				return err
 			}
 
-			// Set the bookmark at the working-copy tip and push.
-			if res, err := run.JJ(a.Runner, "bookmark", "set", epic, "-r", "@"); err != nil {
+			// Set the bookmark at the collapsed line tip (@-, not the empty @) and push.
+			if res, err := run.JJ(a.Runner, "bookmark", "set", epic, "-r", "@-"); err != nil {
 				return exit.Hardf("jj bookmark set could not run: %v", err)
 			} else if res.Code != 0 {
 				return exit.Hardf("jj bookmark set %s failed: %s", epic, strings.TrimSpace(res.Stderr))

@@ -78,10 +78,9 @@ work needs attention" from collapsing into one number.
   "ok": true,
   "verb": "shed.integrate",
   "data": {
-    "stack": [
-      {"bead": "weft-a1", "change": "q2"},
-      {"bead": "weft-a2", "change": "x9"},
-      {"bead": "weft-a3", "change": "k4"}
+    "groups": [
+      [{"bead": "weft-a1", "change": "q2"}, {"bead": "weft-a2", "change": "x9"}],
+      [{"bead": "weft-a3", "change": "k4"}]
     ]
   },
   "conflicts": [
@@ -108,7 +107,7 @@ hatches), `finish` (epic-level), plus top-level `resume`.
 |---|---|---|---|
 | `shed form --epic E [--max N]` | thin | `bd ready` ∩ epic, capped by the parallelism dial `--max` | Returns the wave (member bead-ids) as JSON. The scheduler. `--max` default deferred to seam 3 config. |
 | `shed isolate <wave>` | coarse | once: `jj git fetch`; per member: `bd update --status in_progress` **then** `jj workspace add … -r trunk()` | **Resolves (a):** the `open → in_progress` transition happens at isolation, not at executor return. Status-first ordering is the [seam 3](03-workspace-lifecycle.md) lifecycle invariant (a crash mid-isolate leaves no reapable workspace). |
-| `shed integrate <wave>` | coarse | topo-order members by the bead dep graph, **tiebreak bead-id lexicographic**, `jj rebase -s <change> -o <prev-tip>` (no `--skip-emptied`) | **Resolves (b):** wave members are mutually independent, so the dep graph imposes no intra-wave order; lexicographic bead-id is the deterministic tiebreaker. Emits the linear `stack` (as `{bead,change}` pairs) + any `conflicts[]`. `--skip-emptied` is intentionally omitted: it abandons an emptied member, making `prev=<ch>` a dead reference for the next `-o <ch>`; without it every member survives and the linear cursor stays valid (see ADR `weft-hjx.7`). |
+| `shed integrate <wave>` | coarse | partition members by file overlap, rebase each group as its own `trunk()`-rooted sub-stack via `jj rebase -s <change> -o <prev-tip>` (no `--skip-emptied`); **tiebreak change-id lexicographic** within a group | **Resolves (b):** wave members are mutually independent, so the dep graph imposes no intra-wave order. **Seam 11** refines this: two picks that touch no common file can never conflict, so integrate builds a **forest** (one sub-stack per file-overlap group, cursor reset to `trunk()` per group) and emits `groups` (a list of `{bead,change}` sub-stacks) + any `conflicts[]`, confining each conflict to its group. `--skip-emptied` is intentionally omitted: it abandons an emptied member, making `prev=<ch>` a dead reference for the next `-o <ch>`; without it every member survives and the cursor stays valid (see ADR `weft-hjx.7`). |
 | `shed cleanup <wave>` | coarse | per member: `jj workspace forget` + `rm -rf` | Idempotent teardown. |
 | `shed abandon <wave>` | coarse | `bd update --status open` for members (they are `in_progress`) + `shed cleanup` + `jj abandon` the in-flight change-ids | Bails an in-flight wave. Members are `in_progress` (not closed), so the transition is `--status open`, **not** `bd reopen` (which is for closed beads). `jj abandon` cleans working state; changes stay recoverable via `jj op log` / `jj evolog`. |
 | `shed status <wave>` | thin | read member states + change-ids | Inspection. |
@@ -178,7 +177,7 @@ landed:    closed picks + change-ids
 in-flight: in_progress beads ↔ workspaces ↔ change-ids
 ready:     bd ready (next shed)
 blocked:   bd blocked + why
-conflicts: unresolved first-class conflicts in the stack
+conflicts: unresolved first-class conflicts in the integrated forest
 ```
 
 **Output key aliases:** the `resume --json` `data` object uses vocabulary from
