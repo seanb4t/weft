@@ -341,7 +341,7 @@ func TestShedIntegrateBuildsForestByFileOverlap(t *testing.T) {
 
 func TestShedIntegrateConflictMapsToBeadAcrossGroups(t *testing.T) {
 	// chd (group 2 tail) comes back conflicted; integrate must still map it to
-	// its bead via the rebuilt changeToBead and exit 0.
+	// its bead via beadOf and exit 0.
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		switch {

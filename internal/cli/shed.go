@@ -264,16 +264,9 @@ func (a *App) newShedIntegrateCmd() *cobra.Command {
 				return exit.Hardf("jj log conflicts() failed: %s", strings.TrimSpace(res.Stderr))
 			}
 
-			// Rebuild the change→bead map from ALL group members.
-			changeToBead := map[string]string{}
-			for _, g := range groups {
-				for _, e := range g {
-					changeToBead[e.Change] = e.Bead
-				}
-			}
 			conflicts := []shedPick{}
 			for _, ln := range splitTrimLines(res.Stdout) {
-				b, ok := changeToBead[ln]
+				b, ok := beadOf[ln]
 				if !ok {
 					return exit.Hardf("conflicted change %s is not in the integration forest — cannot map it to a bead", ln)
 				}
