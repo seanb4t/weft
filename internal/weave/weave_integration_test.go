@@ -12,25 +12,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
 
 // TestWeaveLoopEndToEnd drives the full weave loop once over the synthetic
-// fixture and asserts each branch closes: clean land (p1), conflict→heal
-// (p2a/p2b), verify-fail→retry (p3), unresolvable→human escalation (p4a/p4b).
+// fixture using a SINGLE call to `shed integrate` over all 6 picks.
+//
+// Integration strategy: the fixture's file-overlap forest confines conflicts to
+// the two collider pairs (p2a/p2b and p4a/p4b); no cross-group cascade leaks
+// because the pairs touch disjoint files. One integrate call therefore surfaces
+// exactly 2 conflicts. The test heals p2, escalates p4, lands 5 picks, and
+// confirms that `finish open` ships those 5 (escalated pick is parked off the
+// merged line).
 //
 // The test is deliberately slow — it spins up 6 jj workspaces, creates
 // conflicts, drives the real weft binary — budget several minutes.
-//
-// Integration strategy: two calls to `shed integrate` (wave1: clean+heal;
-// wave2: escalate) rather than one call for all 6 beads. This avoids jj's
-// cascade propagation: when an escalated bead's change remains conflicted, all
-// beads stacked above it in a linear integration stack also become
-// cascade-conflicted and cannot be landed. By integrating the escalate pair
-// last (with no beads above it), only the escalated bead itself is stuck, and
-// the non-conflicted bead of the escalate pair can still be landed.
 func TestWeaveLoopEndToEnd(t *testing.T) {
 	requireSubstrate(t)
 	r := newScratchRepo(t)
@@ -42,11 +39,6 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 		refOf[id] = ref
 	}
 
-	// Split the wave into two integration groups.
-	// wave1: p1 (clean), p2a+p2b (heal pair), p3 (verify-fail/retry).
-	// wave2: p4a+p4b (escalate pair).
-	var wave1, wave2 []string
-
 	// --- Step 1: form the wave ---
 	form := r.runWeft(t, "", "shed", "form", "--epic", fx.epic)
 	wave := dataStringSlice(t, form.Data, "wave")
@@ -54,18 +46,9 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 		t.Fatalf("wave = %v, want 6 picks", wave)
 	}
 	for _, bead := range wave {
-		ref := refOf[bead]
-		if ref == "" {
+		if refOf[bead] == "" {
 			t.Fatalf("bead %s not in refOf map (unexpected wave member)", bead)
 		}
-		if ref == "p4a" || ref == "p4b" {
-			wave2 = append(wave2, bead)
-		} else {
-			wave1 = append(wave1, bead)
-		}
-	}
-	if len(wave1) != 4 || len(wave2) != 2 {
-		t.Fatalf("wave split: wave1=%v wave2=%v", wave1, wave2)
 	}
 
 	// --- Step 2: isolate ---
@@ -116,124 +99,84 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 		r.runWeft(t, ws, "pick", "seal", bead)
 	}
 
-	// --- Step 5a: integrate wave1 (p1, p2a, p2b, p3) ---
-	// Expect exactly 1 conflict: the lex-later bead of the p2 pair
-	// (p2a or p2b, whichever has the lex-later bead-id).
-	integ1 := r.runWeft(t, "", append([]string{"shed", "integrate"}, wave1...)...)
-	var integ1Data struct {
-		Stack []struct {
-			Bead   string `json:"bead"`
-			Change string `json:"change"`
-		} `json:"stack"`
+	// --- Step 5: integrate the WHOLE wave (one call) ---
+	integ := r.runWeft(t, "", append([]string{"shed", "integrate"}, wave...)...)
+	var integData struct {
+		Groups    [][]struct{ Bead, Change string } `json:"groups"`
 		Conflicts []struct {
 			Bead   string `json:"bead"`
 			Change string `json:"change"`
 		} `json:"conflicts"`
 	}
-	if err := json.Unmarshal(integ1.Data, &integ1Data); err != nil {
-		t.Fatalf("parse integ1 data: %v", err)
+	if err := json.Unmarshal(integ.Data, &integData); err != nil {
+		t.Fatalf("parse integrate data: %v", err)
 	}
-	// wave1 has one conflict pair (p2a/p2b); must have at least 1 conflict.
-	// Cascade may inflate the count but there must be at least 1.
-	if len(integ1Data.Conflicts) < 1 {
-		t.Fatalf("wave1 conflicts = %d, want >= 1: %s", len(integ1Data.Conflicts), integ1.Data)
+	// The forest confines conflicts to the two overlap pairs — exactly 2, no cascade.
+	if len(integData.Conflicts) != 2 {
+		t.Fatalf("conflicts = %d, want exactly 2 (p2 + p4 colliders, no cross-group cascade): %s",
+			len(integData.Conflicts), integ.Data)
+	}
+	// The wave is woven as a forest, not one linear stack: the two collider pairs
+	// land in separate overlap groups (alongside the independent singletons), so
+	// there is more than one group and every pick appears in exactly one group.
+	if len(integData.Groups) < 2 {
+		t.Fatalf("groups = %d, want >= 2 (forest, not one linear stack): %s",
+			len(integData.Groups), integ.Data)
+	}
+	groupedPicks := 0
+	for _, g := range integData.Groups {
+		groupedPicks += len(g)
+	}
+	if groupedPicks != 6 {
+		t.Fatalf("groups cover %d picks, want all 6: %s", groupedPicks, integ.Data)
 	}
 
-	// Build stack position map for wave1.
-	wave1StackPos := map[string]int{}
-	for i, e := range integ1Data.Stack {
-		wave1StackPos[e.Bead] = i
-	}
-	sortedW1Conflicts := sortConflictsByStackPos(integ1Data.Conflicts, wave1StackPos)
-
-	// --- Step 6a: resolve wave1 conflicts (heal the p2 pair conflict) ---
-	//
-	// All conflicts in wave1 either are the genuine p2 pair conflict or are
-	// cascade from it. Process bottom-up; heal any p2 pair bead, skip
-	// cascade-only beads (p1, p3 not in any conflict pair).
-	for _, c := range sortedW1Conflicts {
+	// --- Step 6: resolve — heal the p2-pair conflict, escalate the p4-pair conflict ---
+	var escalatedBead, escalatedChange string
+	for _, c := range integData.Conflicts {
 		ref := refOf[c.Bead]
-		if ref != "p2a" && ref != "p2b" {
-			continue // cascade-only (p1, p3): skip
-		}
-		if !r.isConflicted(t, c.Change) {
-			continue // already resolved by a previous cascade heal
-		}
-		open := r.runWeft(t, "", "conflict", "open", c.Bead)
-		resolveDir := dataString(t, open.Data, "path")
-		// Heal: fix ALL conflicted files (including cascade-introduced ones).
-		r.healAllConflicts(t, resolveDir)
-		fin := r.runWeft(t, "", "conflict", "finalize", c.Bead)
-		if dataBool(t, fin.Data, "escalated") {
-			t.Fatalf("wave1 conflict %s (ref=%s) unexpectedly escalated", c.Bead, ref)
+		switch ref {
+		case "p2a", "p2b":
+			open := r.runWeft(t, "", "conflict", "open", c.Bead)
+			r.healAllConflicts(t, dataString(t, open.Data, "path"))
+			fin := r.runWeft(t, "", "conflict", "finalize", c.Bead)
+			if dataBool(t, fin.Data, "escalated") {
+				t.Fatalf("p2 conflict %s unexpectedly escalated", c.Bead)
+			}
+		case "p4a", "p4b":
+			open := r.runWeft(t, "", "conflict", "open", c.Bead)
+			if dataString(t, open.Data, "path") == "" {
+				t.Fatalf("conflict open (escalate) returned empty path")
+			}
+			fin := r.runWeft(t, "", "conflict", "finalize", c.Bead)
+			if !dataBool(t, fin.Data, "escalated") {
+				t.Fatalf("p4 conflict %s should escalate (markers left unresolved)", c.Bead)
+			}
+			escalatedBead, escalatedChange = c.Bead, c.Change
+		default:
+			t.Fatalf("unexpected conflict ref %q (bead %s) — cascade leaked across groups?", ref, c.Bead)
 		}
 	}
+	if escalatedBead == "" {
+		t.Fatal("no p4 conflict escalated")
+	}
 
-	// --- Step 7a: land all wave1 picks ---
-	for _, bead := range wave1 {
+	// --- Step 7: land every non-escalated pick (the escalated tail fails the gate) ---
+	for _, bead := range wave {
+		if bead == escalatedBead {
+			continue
+		}
 		r.runWeft(t, "", "pick", "land", bead)
 	}
 
-	// --- Step 8a: cleanup wave1 workspaces ---
-	r.runWeft(t, "", append([]string{"shed", "cleanup"}, wave1...)...)
-
-	// --- Step 5b: integrate wave2 (p4a, p4b — escalate pair) ---
-	integ2 := r.runWeft(t, "", append([]string{"shed", "integrate"}, wave2...)...)
-	var integ2Data struct {
-		Stack []struct {
-			Bead   string `json:"bead"`
-			Change string `json:"change"`
-		} `json:"stack"`
-		Conflicts []struct {
-			Bead   string `json:"bead"`
-			Change string `json:"change"`
-		} `json:"conflicts"`
-	}
-	if err := json.Unmarshal(integ2.Data, &integ2Data); err != nil {
-		t.Fatalf("parse integ2 data: %v", err)
-	}
-	// wave2 has one conflict pair (p4a/p4b); must have exactly 1 conflict
-	// (no cascade possible with only 2 beads — no downstream picks).
-	if len(integ2Data.Conflicts) != 1 {
-		t.Fatalf("wave2 conflicts = %d, want 1: %s", len(integ2Data.Conflicts), integ2.Data)
-	}
-
-	// --- Step 6b: escalate the wave2 conflict ---
-	escalated := map[string]bool{}
-	c2 := integ2Data.Conflicts[0]
-	open2 := r.runWeft(t, "", "conflict", "open", c2.Bead)
-	resolveDir2 := dataString(t, open2.Data, "path")
-	// Escalate: workspace opened but left unresolved; finalize reads workspace@ directly.
-	if resolveDir2 == "" {
-		t.Fatalf("conflict open (escalate) returned empty path")
-	}
-	fin2 := r.runWeft(t, "", "conflict", "finalize", c2.Bead)
-	if !dataBool(t, fin2.Data, "escalated") {
-		t.Fatalf("wave2 conflict %s should escalate (markers left unresolved)", c2.Bead)
-	}
-	escalated[c2.Bead] = true
-	escalatedBead := c2.Bead
-
-	// --- Step 7b: land the non-escalated wave2 pick ---
-	for _, bead := range wave2 {
-		if !escalated[bead] {
-			r.runWeft(t, "", "pick", "land", bead)
+	// --- Step 8: cleanup the landed (non-escalated) workspaces ---
+	toClean := make([]string, 0, len(wave)-1)
+	for _, bead := range wave {
+		if bead != escalatedBead {
+			toClean = append(toClean, bead)
 		}
 	}
-
-	// --- Step 8b: cleanup + reap (idempotent) ---
-	// Cleanup only the non-escalated wave2 pick's workspace; the escalated
-	// pick's pick workspace remains active (in_progress, not yet closed by
-	// a human). Reap handles orphaned workspaces.
-	toClean2 := make([]string, 0, len(wave2)-1)
-	for _, bead := range wave2 {
-		if !escalated[bead] {
-			toClean2 = append(toClean2, bead)
-		}
-	}
-	if len(toClean2) > 0 {
-		r.runWeft(t, "", append([]string{"shed", "cleanup"}, toClean2...)...)
-	}
+	r.runWeft(t, "", append([]string{"shed", "cleanup"}, toClean...)...)
 	r.runWeft(t, "", "reap", "--epic", fx.epic)
 	r.runWeft(t, "", "reap", "--epic", fx.epic) // second call must also succeed (idempotent)
 
@@ -295,18 +238,18 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 	if len(conflicts) == 0 {
 		t.Fatalf("resume.data.conflicts is empty — escalated change not surfaced; resume.Data=%s", resume.Data)
 	}
-	// The escalated change-id (c2.Change) must be a member of resume.data.conflicts.
+	// The escalated change-id must be a member of resume.data.conflicts.
 	// This catches regressions where resume reports a stale or different change-id.
 	foundConflict := false
 	for _, ch := range conflicts {
-		if ch == c2.Change {
+		if ch == escalatedChange {
 			foundConflict = true
 			break
 		}
 	}
 	if !foundConflict {
 		t.Fatalf("escalated change %s not found in resume.data.conflicts=%v; resume.Data=%s",
-			c2.Change, conflicts, resume.Data)
+			escalatedChange, conflicts, resume.Data)
 	}
 
 	// Confirm the `human` label via bd show (the escalation gate in the engine).
@@ -318,24 +261,39 @@ func TestWeaveLoopEndToEnd(t *testing.T) {
 	if w := dataStringSlice(t, form2.Data, "wave"); len(w) != 0 {
 		t.Fatalf("post-loop wave = %v, want empty (escalated pick is human-labelled, excluded by bd ready)", w)
 	}
-}
 
-// sortConflictsByStackPos sorts a conflicts slice in ascending stack position
-// order (bottom of stack = lower index, processed first). This ensures that
-// healing a genuine conflict at a lower stack position auto-resolves cascade
-// conflicts on higher positions before they are processed.
-func sortConflictsByStackPos(conflicts []struct {
-	Bead   string `json:"bead"`
-	Change string `json:"change"`
-}, stackPos map[string]int) []struct{ Bead, Change string } {
-	out := make([]struct{ Bead, Change string }, len(conflicts))
-	for i, c := range conflicts {
-		out[i] = struct{ Bead, Change string }{c.Bead, c.Change}
+	// --- Step 10: finish open dry-run ships the 5 landed picks, not the escalated one ---
+	// finish open --dry-run runs finishOpenPreflight which calls `jj st` and requires
+	// a clean working copy ("no changes"). The default workspace @ has accumulated
+	// uncommitted changes from test-harness setup (.weft/config.toml, .beads/ mutations).
+	// Commit them now so the preflight passes — this models the real workflow where the
+	// orchestrator has a clean @ before shipping.
+	{
+		cmd := exec.Command("jj", "--no-pager", "commit", "-m", "chore: test harness state (weave E2E)")
+		cmd.Dir = r.root
+		cmd.Env = os.Environ()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("jj commit (pre-finish cleanup): %v\n%s", err, out)
+		}
 	}
-	slices.SortFunc(out, func(a, b struct{ Bead, Change string }) int {
-		return stackPos[a.Bead] - stackPos[b.Bead]
-	})
-	return out
+	fo := r.runWeft(t, "", "finish", "open", fx.epic, "--dry-run")
+	var foData struct {
+		Picks []struct {
+			Bead   string `json:"bead"`
+			Change string `json:"change"`
+		} `json:"picks"`
+	}
+	if err := json.Unmarshal(fo.Data, &foData); err != nil {
+		t.Fatalf("parse finish.open data: %v", err)
+	}
+	if len(foData.Picks) != 5 {
+		t.Fatalf("finish open picks = %d, want 5 (closed only): %s", len(foData.Picks), fo.Data)
+	}
+	for _, p := range foData.Picks {
+		if p.Bead == escalatedBead {
+			t.Fatalf("escalated bead %s must not be in finish picks", escalatedBead)
+		}
+	}
 }
 
 // healAllConflicts fixes all conflicted files in the resolution workspace by
@@ -409,22 +367,6 @@ func (r *scratchRepo) healAllConflicts(t *testing.T, resolveDir string) {
 		// Exit 0 with output means conflicts are still present.
 		t.Fatalf("healAllConflicts: jj resolve --list still reports conflicts after write+snapshot in %s:\n%s", resolveDir, listOut)
 	}
-}
-
-// isConflicted reports whether the given jj change-id is currently in jj's
-// conflicts() set. This lets the conflict-resolution loop skip cascade
-// conflicts that were auto-resolved when an upstream conflict was healed.
-func (r *scratchRepo) isConflicted(t *testing.T, change string) bool {
-	t.Helper()
-	cmd := exec.Command("jj", "--no-pager", "log", "-r", "conflicts() & "+change,
-		"--no-graph", "-T", `change_id.short(12) ++ "\n"`)
-	cmd.Dir = r.root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// jj exits non-zero when the revset matches nothing (not an error for us).
-		return false
-	}
-	return strings.TrimSpace(string(out)) != ""
 }
 
 // assertBeadHasLabel verifies the bead carries the expected label via bd show --json.
