@@ -793,6 +793,16 @@ func TestCollapseClosedPicksEmptyIsNoop(t *testing.T) {
 	}
 }
 
+// TestFinishReconcileMergeBranchLeavesParkedEscalatedAlone is intentionally
+// retained as a unit-level guard for the call-routing invariant (the reconcile
+// switch must not call rebase with a change-id it was never given). However this
+// test is mock-tautological with respect to the topological safety property: the
+// production reconcile code (finish.go ~488) never literally references "chPark",
+// so the assertion that no jj invocation mentions "chPark" passes trivially
+// regardless of whether a real jj rebase would drag a trunk()-sibling change.
+// The authoritative topological proof lives in:
+//
+//	internal/weave/finish_topology_test.go:TestReconcileMergeBranchLeavesParkedSiblingUntouched
 func TestFinishReconcileMergeBranchLeavesParkedEscalatedAlone(t *testing.T) {
 	// Merge-commit style; a parked escalated change (chPark) is a trunk() sibling,
 	// not an ancestor of @. Reconcile must not move it.
