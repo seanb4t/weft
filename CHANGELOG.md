@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1](https://github.com/seanb4t/weft/compare/v0.1.0...v0.1.1) (2026-06-09)
+
+
+### Features
+
+* **weft-eoe:** seam 11 — overlap-aware integration topology ([#42](https://github.com/seanb4t/weft/issues/42)) ([ffad3ff](https://github.com/seanb4t/weft/commit/ffad3ff02a3e5056ee91cab5de386bee97c80084))
+* **weft-hjx.15:** harden plan emit against bd field-drop (seam 9) ([#34](https://github.com/seanb4t/weft/issues/34)) ([4bf8016](https://github.com/seanb4t/weft/commit/4bf801688402ddbad1d74bfd1fc5ba3dfb2932a5))
+* **weft-w1y:** seam 10 — prove the weave loop end-to-end ([#39](https://github.com/seanb4t/weft/issues/39)) ([0f897b6](https://github.com/seanb4t/weft/commit/0f897b6c72ba168b40ef1db8c352477fe8e2ee9c))
+
+
+### Bug Fixes
+
+* **plan:** PR [#34](https://github.com/seanb4t/weft/issues/34) review follow-ups — allow-drop guard, replan read-back, CI drift sentinel ([#36](https://github.com/seanb4t/weft/issues/36)) ([8778232](https://github.com/seanb4t/weft/commit/8778232c1616099b161975dbf5e05c45fefd1cc6))
+
 ## 0.1.0 (2026-06-06)
 
 
