@@ -34,3 +34,7 @@ Record explicitly: weft v1 deliberately ships the **front-loaded spine** (`new-p
 - **Positive:** sets an explicit expectation — weft v1 = front-loaded planning spine + autonomous weave; the phased/interactive per-phase loop is roadmap, not absent-by-principle. Gives a clear additive restoration path (`weft-ccy`: discuss / verify-work / phased planner), each a thin orchestrator over existing verbs + beads.
 - **Negative:** until `weft-ccy` lands, weft's interactive UX is materially thinner than GSD's — no per-phase HOW-shaping, no human UAT walk-through, no spike/sketch/explore. Users wanting that loop must wait or drive the verbs manually.
 - **Neutral:** the engine substrate is unchanged; the dep-graph already schedules phases, so restoration touches only the prompt/skill layer and the planner's warp structuring. An opt-in `--phased`/`--interactive` mode can coexist with the current one-shot path.
+
+## Addenda
+
+- (2026-06-09, spec docs/superpowers/specs/2026-06-09-layer-a-interactive-phased-loop-design.md) The consequence "an opt-in --phased/--interactive mode can coexist with the current one-shot path" is superseded. Phasing is AUTO-DISCOVERED by the planner — there is no flag. The one-shot path survives behaviorally as the SINGLE-PHASE DEGENERATE CASE (project epic = phase epic, picks planned immediately, today's epic+picks emission shape), not as a separate mode. Pick-level planning for multi-phase projects is just-in-time per phase, after that phase's discuss.

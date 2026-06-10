@@ -18,6 +18,12 @@ as native Claude Code skills and agents.
 - **`/weft:new-project [project description]`** — plan a new project into the
   warp: adaptive questioning, parallel research, and requirement extraction,
   then emit a `warp-plan.json` for human approval.
+- **`/weft:discuss [epic-id]`** — shape HOW a phase gets built: adaptive
+  gray-area questions whose locked decisions land in the epic's bead design
+  field for the planner to consume.
+- **`/weft:verify-work [epic-id]`** — interactive UAT: walk the epic's
+  deliverables y/n one at a time, diagnose failures, and file fix picks
+  under the epic.
 
 ## Agents
 
