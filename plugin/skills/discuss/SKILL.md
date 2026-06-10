@@ -163,15 +163,37 @@ be present; use an empty body under a heading if nothing applies to it:
 ```
 
 **Merge discipline:** if the epic's design field already contains prior locked
-decisions (detected in §1), merge the new decisions in — never silently
-overwrite prior content. Add new bullets under the appropriate headings; do
-not remove or alter existing bullets unless the user explicitly revises a
+decisions (detected in §3), merge the new decisions in — never silently
+overwrite prior content. Follow this procedure:
+
+1. Read the existing design field:
+   ```bash
+   bd show <epic-id> --json | jq -r '.[0].design // ""'
+   ```
+2. If the result is empty, write the new doc as-is. If non-empty, produce the
+   merged doc: keep every existing line; append new bullets under their
+   matching `##` heading; add any missing headings at the end.
+3. Write the full merged doc back via `--design-file -` (the field is replaced
+   wholesale, which is why the read-merge step above is mandatory):
+   ```bash
+   bd update <epic-id> --design-file - <<'EOF'
+   ## Domain
+   ...
+   EOF
+   ```
+   The quoted heredoc delimiter (`'EOF'`) prevents shell expansion of
+   backticks and `$` in the doc body.
+
+Do not remove or alter existing bullets unless the user explicitly revises a
 prior decision during this session.
 
 Persist with:
 
 ```bash
-bd update <epic-id> --design "<structured decisions doc>"
+bd update <epic-id> --design-file - <<'EOF'
+## Domain
+...
+EOF
 ```
 
 Then append an audit note:
