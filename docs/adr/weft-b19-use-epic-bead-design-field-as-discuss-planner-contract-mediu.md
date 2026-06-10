@@ -14,7 +14,7 @@ The discuss skill (weft-ccy.1) locks per-phase implementation decisions (library
 
 ## Decision
 
-Locked decisions from discuss are persisted to the epic bead design field via `bd update <epic-id> --design`, structured as markdown headings mirroring GSD CONTEXT.md sections: `## Domain`, `## Decisions`, `## Canonical refs`, `## Specifics`, `## Deferred`. The phase-C planner reads them via `bd show <epic-id>`. Bead notes are used in parallel for audit/resume only. Existing design-field content is merged, never silently overwritten.
+Locked decisions from discuss are persisted to the epic bead design field via `bd update <epic-id> --design-file -` (stdin heredoc; the inline `--design` string form is a shell hazard for multi-line docs), structured as markdown headings mirroring GSD CONTEXT.md sections: `## Domain`, `## Decisions`, `## Canonical refs`, `## Specifics`, `## Deferred`. The phase-C planner reads them via `bd show <epic-id>`. Bead notes are used in parallel for audit/resume only. Existing design-field content is merged, never silently overwritten.
 
 ## Rationale
 
