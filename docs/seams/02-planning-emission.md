@@ -52,6 +52,14 @@ issue with a reference. The formal `bd create --graph` JSON schema is §8.)
 The authored artifact. Human/agent-produced, transient — once emitted, **beads
 is the source of truth** (there is no persisted `ROADMAP.md`).
 
+A warp-plan carries **either** `picks[]` **or** `phases[]` — never both (mutual
+exclusion enforced at `plan check` / `plan emit`). Pick plans express a flat set
+of work items under one epic (the original shape). Roadmap plans use `phases[]`
+to express a multi-phase project: each phase becomes a sub-epic under the project
+epic, with inter-phase `needs` edges encoded as `blocks` edges in the emitted graph.
+
+**Pick plan shape:**
+
 ```json
 {
   "epic":  { "title": "…", "description": "…", "acceptance": "…" },
@@ -66,6 +74,25 @@ is the source of truth** (there is no persisted `ROADMAP.md`).
   ]
 }
 ```
+
+**Roadmap plan shape (`phases[]`):**
+
+```json
+{
+  "epic": { "title": "…", "description": "…", "acceptance": "…" },
+  "phases": [
+    { "ref": "p1", "title": "…", "description": "…", "acceptance": "…" },
+    { "ref": "p2", "title": "…", "description": "…", "acceptance": "…",
+      "needs": ["p1"] }
+  ]
+}
+```
+
+Phase fields: `ref` (required), `title` (required), `description` (required),
+`acceptance` (optional, folded into description as `## Acceptance`), `needs`
+(optional, list of sibling `ref` values). The `ref` reuses the pick ref
+contract (character-set, stability, mutual exclusion with `@epic`) and lands as
+`weft-ref:<ref>` on the emitted phase sub-epic.
 
 - `ref` is a **stable, plan-local identity key** — the author MUST keep it
   stable across revisions, because it is the durable plan↔warp join (§7). The
@@ -143,7 +170,7 @@ Extends the [seam 1](01-command-surface.md) surface.
 | Verb | Kind | Wraps | Notes |
 |---|---|---|---|
 | `plan check <file>` | thin | schema + acceptance validation of `warp-plan.json` | Exit 0 + `{valid: bool, issues: […]}`. No mutation. |
-| `plan emit <file> [--dry-run]` | coarse | derive edges (§4) → preview → `bd create --graph` (first emit) / §7 `bd import` upsert (re-plan) | `--dry-run` prints the full warp (epic, issues, edges) **and the warn+tolerate overlaps** without mutating. Without it, emits atomically. On re-plan against an existing warp the §7 two-step upsert replaces `bd create --graph`. |
+| `plan emit <file> [--dry-run]` | coarse | derive edges (§4) → preview → `bd create --graph` (first emit) / §7 `bd import` upsert (re-plan) | `--dry-run` prints the full warp (epic, issues, edges) **and the warn+tolerate overlaps** without mutating. Without it, emits atomically. On re-plan against an existing warp the §7 two-step upsert replaces `bd create --graph`. For roadmap plans (`phases[]`), creates a project epic with phase sub-epics and inter-phase `blocks` edges. The emit envelope carries `ids` (node key → bead id, e.g. `{"@epic":"…","p1":"…"}`) on every first-emit create. |
 
 `emit` follows the seam-1 contract: text default, `--json` envelope, engine-
 success exit codes (a warn+tolerate overlap is **data on exit 0**, not an
@@ -159,9 +186,16 @@ interruption before that single call leaves no partial warp; re-running is safe.
 The emitted graph:
 
 - **epic** = the ship unit (design.md §6: `weft finish` operates on an epic =
-  one PR). One `warp-plan.json` → one epic.
+  one PR). One `warp-plan.json` → one epic *or* one roadmap.
+  - **Pick plan** (the original shape): one `warp-plan.json` → one epic +
+    pick issues + dep edges. The epic is the ship unit.
+  - **Roadmap plan** (`phases[]`): one `warp-plan.json` → one project epic +
+    phase sub-epics + inter-phase `blocks` edges. Each phase sub-epic is itself
+    the ship unit for that phase (one PR per phase via `weft finish`). Pick plans
+    scoped `--epic <phase-id>` populate each phase's work.
 - **issues** = picks (one bead → one pick → one jj change, per the vocabulary).
-- **edges** = explicit `needs` ∪ derived file-overlap edges (§4).
+- **edges** = explicit `needs` ∪ derived file-overlap edges (§4); for roadmap
+  plans, inter-phase `needs` become `blocks` edges between phase sub-epics.
 - **labels** = `phase:*`, any authored labels, and the `weft-ref:<ref>` identity
   label stamped at emit (§3/§7); the `jj-change:<id>` label is added later at
   execution time (seam 1 `pick seal`), not at emission.
@@ -182,6 +216,25 @@ A spec evolves; the warp must follow without being rebuilt from scratch:
   (→ create), and `bd import` applies it. Idempotent — re-emitting an unchanged
   plan is a no-op. (This is why `ref` values must be stable: they are the
   resolution key.)
+
+  **Note:** `bd import` ignores the JSONL `parent` field (verified 2026-06-10).
+  The re-plan path therefore parses `bd import --json`'s positional `ids` envelope
+  (`ids[i]` = the bead id assigned to record `i`) and wires
+  `bd dep add <pick> <epic> --type parent-child` for each created pick
+  post-import, before the scoped readback. This is the same post-import edge
+  wiring pattern described below for new-pick `needs` edges.
+
+- **New-pick edges via `bd dep add`:** any `needs` edge that touches a newly
+  created pick cannot be expressed inside the `bd import` batch (bd cannot
+  forward-reference ids within a batch). After import completes, `weft` performs
+  a scoped readback (re-reads the epic's children by `weft-ref:` label) to resolve
+  the post-import bead ids, then issues one `bd dep add <from> <to> --type blocks`
+  call per deferred edge. The emit envelope carries these as `applied_edges`
+  (not `deferred_edges`; dry-run reports the edges that *will* be applied, with
+  `dry_run: true` contextualizing). Any failure to resolve or wire an edge is a
+  hard error (exit 2) — a partially wired warp is incomplete and must be
+  investigated before re-running. (Implemented in `weft-ccy.5`.)
+
 - **Removed picks:** a pick dropped from the plan is **superseded**
   (`bd supersede <id> --with <new>`, which auto-closes the old issue with a
   reference — grounded §2), never silently deleted, so its history and any
@@ -198,6 +251,8 @@ A spec evolves; the warp must follow without being rebuilt from scratch:
 - Declared-vs-actual file drift detection (compare `jj diff` paths to `files`).
 - `has_checkpoint` representation (GSD's user-interaction gate → a bead flag /
   `bd human`).
+- ~~New-pick `needs` edges applied post-import via `bd dep add`~~ — shipped in
+  `weft-ccy.5` (see §7).
 - Re-plan reconciliation for removed/reordered picks (supersede policy).
 
 ## 9. Cross-spec note
