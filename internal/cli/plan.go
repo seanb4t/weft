@@ -228,8 +228,12 @@ func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 
 // planReplan upserts an existing warp via bd import (spec §7): resolve the
 // ref->bead map from the epic's weft-ref labels, build the upsert payload, and
-// (unless --dry-run) apply it. New-pick dependency edges are applied post-import
-// via bd dep add (§8); removed-pick supersede remains a §8 open sub-seam.
+// (unless --dry-run) apply it. Sequence: (1) bd import, (2) parent-child wiring
+// for new picks via bd dep add (bd import ignores the JSONL parent field —
+// verified 2026-06-10), (3) post-import read-back to verify authored fields
+// round-tripped (seam 9 §7), (4) DeferredEdge wiring for edges touching a new
+// pick via bd dep add --type blocks (seam-2 §8). Removed-pick supersede remains
+// a §8 open sub-seam.
 func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, epic string, dryRun bool) error {
 	existing, err := a.warpRefMap(epic)
 	if err != nil {
@@ -288,10 +292,10 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	// bd import ignores the JSONL "parent" field on both create and update paths
 	// (verified 2026-06-10), so parentage is wired post-import; this also makes
 	// the scoped readback below see the new picks.
-	for _, ref := range rp.Created {
+	for i, ref := range rp.Created {
 		id := refToID[ref]
 		if id == "" {
-			continue // positional contract already verified above; guard only
+			return exit.Hardf("re-plan applied but bd import returned an empty id for created ref %q (record %d); the pick is orphaned and the warp is incomplete — investigate", ref, i)
 		}
 		dep, err := run.BD(a.Runner, "dep", "add", id, epic, "--type", "parent-child")
 		if err != nil {
@@ -312,9 +316,10 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		return exit.Hardf("plan emit replan applied but %d authored field(s) did not round-trip (bd dropped them); the warp is incomplete — investigate:\n%s",
 			len(disc), strings.Join(disc, "\n"))
 	}
-	// §8: wire edges that touched a new pick — bd import cannot forward-
-	// reference ids inside a batch, so they are applied post-import from the
-	// readback map. Any failure leaves the warp structurally incomplete: hard.
+	// Wire blocks edges that touched a new pick (seam-2 §7; formerly the §8 sub-seam,
+	// shipped in weft-ccy.5) — bd import cannot forward-reference ids inside a
+	// batch, so they are applied post-import from the readback map. Any failure
+	// leaves the warp structurally incomplete: hard.
 	for i, e := range rp.DeferredEdges {
 		from, fok := readback[e.From]
 		to, tok := readback[e.To]

@@ -829,6 +829,34 @@ func TestPlanEmitReplanIDsCountMismatchIsHard(t *testing.T) {
 	}
 }
 
+// TestPlanEmitReplanImportUnparseableIsHard covers the zero-exit / non-JSON
+// branch of the bd import --json output: bd exits 0 but stdout is not valid
+// JSON (e.g. "imported 1 record"). This is distinct from (1) non-zero exit
+// (TestPlanEmitImportNonZeroExitIsHard) and (2) count mismatch
+// (TestPlanEmitReplanIDsCountMismatchIsHard). Must exit 2 (hard error).
+func TestPlanEmitReplanImportUnparseableIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(j, "bd list") {
+			// Pre-import ref-map: one matched pick so bd import is reached.
+			return run.Result{Stdout: `[{"id":"e.1","status":"open","labels":["weft-ref:a"]}]`, Code: 0}
+		}
+		if strings.Contains(j, "bd import") {
+			// Zero exit but non-JSON stdout — triggers json.Unmarshal failure.
+			return run.Result{Stdout: "imported 1 record", Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("unparseable bd import --json output must be a hard error (exit 2), got %d (err=%v)", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "could not be parsed") {
+		t.Errorf("error must mention could not be parsed, got: %v", err)
+	}
+}
+
 func TestPlanEmitReplanAppliesDeferredEdges(t *testing.T) {
 	// Plan: existing pick a (matched), new pick b with needs:[a] -> the a<-b
 	// edge is deferred past import and must be wired via bd dep add using the

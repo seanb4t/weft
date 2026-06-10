@@ -34,3 +34,7 @@ After `bd import` succeeds and the post-import readback rebuilds the ref-to-id m
 - **Positive:** new-pick edges are live immediately after re-plan; bd ready orders JIT-planned picks correctly; the envelope is honest.
 - **Negative:** each edge is a separate CLI invocation; a failure partway leaves some edges wired (mitigated: hard fail names the unwired edge for investigation).
 - **Neutral:** removed-pick supersede remains the open §8 sub-seam.
+
+## Addendum (2026-06-10, PR #50)
+
+The post-import wiring mechanism also covers parent-child links: bd import ignores the JSONL parent field entirely (verified), so planReplan wires bd dep add --type parent-child for created picks from the positional import ids before the scoped readback. Same hard-fail posture.

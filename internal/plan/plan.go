@@ -149,7 +149,7 @@ func Validate(p WarpPlan) []Issue {
 	return issues
 }
 
-// validatePhases mirrors the pick rules for the roadmap shape (spec §1).
+// validatePhases mirrors the pick rules for the roadmap shape (phased-emission spec §1).
 // Intentional delta: phases carry no priority or files fields, so the
 // corresponding pick checks are absent here by design.
 func validatePhases(phases []Phase) []Issue {

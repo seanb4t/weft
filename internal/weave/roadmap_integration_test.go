@@ -16,17 +16,20 @@ import (
 )
 
 // bdJSON runs bd against the scratch repo and returns stdout (for assertions
-// the harness's mustBD, which discards output, cannot make).
+// the harness's mustBD, which discards output, cannot make). On failure it
+// includes bd's stderr in the fatal message so the error is diagnosable.
 func bdJSON(t *testing.T, r *scratchRepo, args ...string) []byte {
 	t.Helper()
+	var stdout, stderr strings.Builder
 	cmd := exec.Command("bd", args...)
 	cmd.Dir = r.root
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+r.beadsDir)
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("bd %s: %v", strings.Join(args, " "), err)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("bd %s: %v\nstderr: %s", strings.Join(args, " "), err, stderr.String())
 	}
-	return out
+	return []byte(stdout.String())
 }
 
 func readyIDs(t *testing.T, r *scratchRepo) map[string]bool {

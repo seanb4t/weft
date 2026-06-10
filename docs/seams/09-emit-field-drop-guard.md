@@ -231,7 +231,32 @@ unchanged** — `mode`, `created` (pick count), `edges` (the derivation slice),
   "data": {
     "mode": "create",
     "created": 5,
+    "ids": { "@epic": "weft-42", "p1": "weft-4a1", "p2": "weft-4a2" },
     "edges": [ { "from": "p2", "to": "p1" } ],
+    "tolerated": [],
+    "schema_version": 1,
+    "warnings": [],
+    "bd_output": "…"
+  },
+  "next": "…"
+}
+```
+
+Roadmap create envelope example (`phases[]` plan): the live envelope gains a
+`phases` count; the dry-run envelope carries `phases` where a pick plan's
+dry-run carries `picks` (absent, never present-but-zero — consumers branch on
+which key is present). `created` counts the phase sub-epics.
+
+```json
+{
+  "ok": true,
+  "verb": "plan.emit",
+  "data": {
+    "mode": "create",
+    "phases": 2,
+    "created": 2,
+    "ids": { "@epic": "weft-42", "p1": "weft-4a1", "p2": "weft-4a2" },
+    "edges": [],
     "tolerated": [],
     "schema_version": 1,
     "warnings": [],
@@ -253,7 +278,7 @@ Re-plan (upsert) wet envelope example:
     "updated": ["p1"],
     "created": ["p2"],
     "removed": [],
-    "deferred_edges": [],
+    "applied_edges": [],
     "tolerated": [],
     "warnings": [],
     "bd_output": "…",
@@ -266,6 +291,8 @@ Re-plan (upsert) wet envelope example:
 Re-plan dry-run envelope example (`warnings` is always `[]` — no bd call
 precedes it on this path). Note: `verification` is intentionally absent here —
 dry-run does no import, so there is no read-back and no verification field.
+On the create path, the envelope key `picks` is absent when the plan carries
+`phases` (roadmap emits); consumers must branch on which key is present.
 
 ```json
 {
@@ -278,7 +305,7 @@ dry-run does no import, so there is no read-back and no verification field.
     "updated": ["p1"],
     "created": ["p2"],
     "removed": [],
-    "deferred_edges": [],
+    "applied_edges": [],
     "tolerated": [],
     "warnings": []
   },

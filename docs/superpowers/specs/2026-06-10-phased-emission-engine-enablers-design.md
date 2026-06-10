@@ -207,3 +207,16 @@ Removed-pick supersede remains an open §8 sub-seam (out of scope here).
 - Hybrid plans (roadmap + phase-1 picks in one file) — rejected in the parent
   spec's plan-timing decision.
 - Any `weft` verb surface change beyond `plan emit`'s output; no new flags.
+
+## Discovered during implementation
+
+**bd import ignores the JSONL `parent` field on both the create and update paths
+(verified 2026-06-10).** Consequently, the shipped re-plan path does not rely on
+`parent` in the JSONL payload for new-pick parentage; instead, `planReplan`
+parses `bd import --json`'s positional ids array (`ids[i]` = bead id for JSONL
+record `i`) and issues `bd dep add --type parent-child` for each created pick
+before the scoped read-back, so the read-back sees the new picks as children of
+the epic. `importRecord.Parent` is retained in the struct for forward-compatibility
+in case `bd import` adds parent support in a future release. The wiring step
+uses the same hard-fail posture as `VerifyReplan`: any empty id or failed
+`dep add` exits 2 immediately.
