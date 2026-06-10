@@ -285,3 +285,4 @@ Run: `jj commit -m "docs(weft-cfp): ADR addendum — auto-discovered phasing; on
 ## Out of scope (later phases per the spec)
 
 - Planner consumption of the design field (phase C); GSD mode flags / `/gsd-ui-phase`; the phase-driver auto loop (phase E); engine changes (phase B).
+<!-- adr-capture: sha256=70e945dfa8173c48; session=cli; ts=2026-06-10T01:15:55Z; adrs=weft-b19 -->
