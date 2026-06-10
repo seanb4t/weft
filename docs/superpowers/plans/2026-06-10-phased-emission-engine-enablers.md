@@ -1106,3 +1106,4 @@ Run: `jj --no-pager commit -m "docs(weft-ccy.5): seam-2 — phases[] roadmap emi
 - Phased planner prompts + `new-project` changes (weft-ccy.3, phase C).
 - Removed-pick supersede (§8 remainder).
 - Hybrid plans (roadmap + picks in one file).
+<!-- adr-capture: sha256=f07f22a209c75da4; session=cli; ts=2026-06-10T12:00:35Z; adrs=weft-4hq,weft-0pf -->
