@@ -79,9 +79,9 @@ first level that yields at least one item):
    ```bash
    bd show <epic-id> --children --json | jq -r '.[] | select(.status=="closed") | .id'
    ```
-   For each closed child, run `bd show <child-id>` and extract its `acceptance`
-   field. Each acceptance criterion becomes a deliverable attributed to that
-   pick's title.
+   For each closed child, run `bd show <child-id> --json` and extract its
+   acceptance criteria via jq path `.[0].acceptance_criteria`. Each acceptance
+   criterion becomes a deliverable attributed to that pick's title.
 3. **Epic goal/description as last resort** — if neither of the above yields
    deliverables, use the epic's `title` and `description` as a single
    deliverable phrased as: "The epic goal is met: `<title>` — `<description>`."
@@ -100,7 +100,7 @@ and stop.
 For each deliverable (in enumeration order, skipping already-passed items from
 §3):
 
-1. Present the checkpoint clearly, numbered: `[N/Total] <deliverable text>`.
+1. Present the checkpoint clearly, numbered: `[N/Total] <deliverable text>` (where Total = the deliverable count from §4).
 2. Ask: "Does reality match this? (y/n/empty = pass)"
 3. Branch on response:
    - `yes`, `y`, or empty (Enter) → **pass**. Append note immediately:
@@ -109,9 +109,12 @@ For each deliverable (in enumeration order, skipping already-passed items from
      ```
      Advance to the next item.
    - Any other response → **fail**. Record the user's exact words verbatim as
-     the issue description. Append note immediately:
+     the issue description. Append note immediately. Because the user's words
+     may contain backticks, `$`, `!`, or other shell-special characters, use
+     the stdin form to avoid expansion hazards:
      ```bash
-     bd note <epic-id> "verify-work: <deliverable> — FAIL(<severity>): <user words>"
+     printf '%s' "verify-work: <deliverable> — FAIL(<severity>): <user words>" \
+       | bd note <epic-id> --stdin
      ```
      where `<severity>` is inferred in §6.
 
@@ -127,7 +130,7 @@ failure:
 
 | User wording signals | Severity | Priority mapping |
 |---|---|---|
-| crash, data loss, corruption, unrecoverable, broken, hang | P1 (blocker) | `--priority=critical` |
+| crash, data loss, corruption, unrecoverable, hang | P1 (blocker) | `--priority=critical` |
 | doesn't work, fails, broken, not working, wrong output | P2 (major) | `--priority=high` |
 | looks off, cosmetic, alignment, typo, minor, slightly | P3 (minor) | `--priority=medium` |
 
@@ -138,9 +141,9 @@ note (see §5) and use it when creating the fix pick (§8).
 
 ## 7. Diagnose failures
 
-After the loop completes, for each recorded failure dispatch a **fresh
-read-only diagnosis agent** using the host `Agent` tool. Run agents in parallel
-across all failures.
+After the loop completes, for each recorded failure dispatch fresh read-only
+diagnosis agents in parallel across all failures — host-runtime agent dispatch
+is the host's concern; this workflow describes the step, not the plumbing.
 
 Each agent receives:
 - the deliverable text,
@@ -175,7 +178,7 @@ issues:
 ```bash
 bd create --parent <epic-id> --type=bug --priority=<severity-mapped> \
   --title "UAT fix: <deliverable>" \
-  --description-file - \
+  --body-file - \
   --acceptance "<the failed checkpoint, restated as the pass condition>" \
   --labels "uat-fix" <<'EOF'
 <user words>
