@@ -795,3 +795,88 @@ func TestPlanReplanReadbackMalformedJSONIsHard(t *testing.T) {
 		t.Fatalf("malformed read-back JSON must be a hard error (exit 2), got %d (err=%v)", got, err)
 	}
 }
+
+func TestPlanEmitReplanAppliesDeferredEdges(t *testing.T) {
+	// Plan: existing pick a (matched), new pick b with needs:[a] -> the a<-b
+	// edge is deferred past import and must be wired via bd dep add using the
+	// post-import readback ids.
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[`+
+		`{"ref":"a","title":"A","description":"a"},`+
+		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
+	preImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
+	postImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
+		`{"id":"w-b","status":"open","title":"B","priority":2,"labels":["weft-ref:b"],"description":"b"}]`
+	listCalls := 0
+	var depArgs []string
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		switch {
+		case strings.Contains(j, "list --parent"):
+			listCalls++
+			if listCalls == 1 {
+				return run.Result{Stdout: preImport, Code: 0}
+			}
+			return run.Result{Stdout: postImport, Code: 0}
+		case strings.Contains(j, "dep add"):
+			depArgs = args
+			return run.Result{Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "w-epic", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	want := strings.Join([]string{"dep", "add", "w-b", "w-a", "--type", "blocks"}, " ")
+	if strings.Join(depArgs, " ") != want {
+		t.Errorf("dep add args = %v, want %q", depArgs, want)
+	}
+	if !strings.Contains(out.String(), `"applied_edges"`) || strings.Contains(out.String(), `"deferred_edges"`) {
+		t.Errorf("envelope key must be applied_edges (renamed): %q", out.String())
+	}
+}
+
+func TestPlanEmitReplanDepAddFailureIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[`+
+		`{"ref":"a","title":"A","description":"a"},`+
+		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
+	preImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
+	postImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
+		`{"id":"w-b","status":"open","title":"B","priority":2,"labels":["weft-ref:b"],"description":"b"}]`
+	listCalls := 0
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		switch {
+		case strings.Contains(j, "list --parent"):
+			listCalls++
+			if listCalls == 1 {
+				return run.Result{Stdout: preImport, Code: 0}
+			}
+			return run.Result{Stdout: postImport, Code: 0}
+		case strings.Contains(j, "dep add"):
+			return run.Result{Code: 1, Stderr: "boom"}
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "w-epic")); got != 2 {
+		t.Fatalf("dep add failure must exit 2, got %d", got)
+	}
+}
+
+func TestPlanEmitReplanUnresolvableEdgeIsHard(t *testing.T) {
+	// Post-import readback missing the new pick (bd silently didn't create it):
+	// the deferred edge cannot resolve -> hard fail, warp incomplete.
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[`+
+		`{"ref":"a","title":"A","description":"a"},`+
+		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
+	preImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "list --parent") {
+			return run.Result{Stdout: preImport, Code: 0} // same both times: b never appears
+		}
+		return run.Result{Code: 0}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--epic", "w-epic")); got != 2 {
+		t.Fatalf("unresolvable deferred edge must exit 2, got %d", got)
+	}
+}

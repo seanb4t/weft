@@ -228,8 +228,8 @@ func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 
 // planReplan upserts an existing warp via bd import (spec §7): resolve the
 // ref->bead map from the epic's weft-ref labels, build the upsert payload, and
-// (unless --dry-run) apply it. New-pick dependency edges and removed-pick
-// supersede are surfaced as data but NOT applied (§8 sub-seams).
+// (unless --dry-run) apply it. New-pick dependency edges are applied post-import
+// via bd dep add (§8); removed-pick supersede remains a §8 open sub-seam.
 func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, epic string, dryRun bool) error {
 	existing, err := a.warpRefMap(epic)
 	if err != nil {
@@ -244,7 +244,8 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		data := map[string]any{
 			"dry_run": true, "mode": "upsert", "epic": epic,
 			"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
-			"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+			// applied_edges: same key as live; on dry-run these are the edges that WILL be wired post-import.
+			"applied_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 			"warnings": warnings,
 		}
 		return Emit(cmd, "plan.emit", data, replanText(epic, rp, true))
@@ -274,10 +275,27 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		return exit.Hardf("plan emit replan applied but %d authored field(s) did not round-trip (bd dropped them); the warp is incomplete — investigate:\n%s",
 			len(disc), strings.Join(disc, "\n"))
 	}
+	// §8: wire edges that touched a new pick — bd import cannot forward-
+	// reference ids inside a batch, so they are applied post-import from the
+	// readback map. Any failure leaves the warp structurally incomplete: hard.
+	for i, e := range rp.DeferredEdges {
+		from, fok := readback[e.From]
+		to, tok := readback[e.To]
+		if !fok || !tok || from.ID == "" || to.ID == "" {
+			return exit.Hardf("re-plan applied but edge %s->%s could not be resolved post-import (edge %d/%d; %d already wired); the warp is incomplete — investigate", e.From, e.To, i+1, len(rp.DeferredEdges), i)
+		}
+		dep, err := run.BD(a.Runner, "dep", "add", from.ID, to.ID, "--type", "blocks")
+		if err != nil {
+			return exit.Hardf("re-plan applied but bd dep add could not run for %s->%s (edge %d/%d; %d already wired): %v", e.From, e.To, i+1, len(rp.DeferredEdges), i, err)
+		}
+		if dep.Code != 0 {
+			return exit.Hardf("re-plan applied but edge %s->%s could not be wired (edge %d/%d; %d already wired): %s — the warp is incomplete; investigate", e.From, e.To, i+1, len(rp.DeferredEdges), i, strings.TrimSpace(dep.Stderr))
+		}
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
-		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+		"applied_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
 		"verification": []string{},
 	}
@@ -340,6 +358,7 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
 	return warpScan(a, epic, "post-import read-back", func(it warpChild) plan.ReadbackBead {
 		return plan.ReadbackBead{
+			ID:          it.ID,
 			Title:       it.Title,
 			Priority:    it.Priority,
 			Labels:      it.Labels,
@@ -362,8 +381,12 @@ func replanText(epic string, rp plan.Replan, dry bool) string {
 		for i, e := range rp.DeferredEdges {
 			parts[i] = fmt.Sprintf("%s->%s", e.From, e.To)
 		}
-		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — wire after creation (§8): %s\n",
-			len(rp.DeferredEdges), strings.Join(parts, ", "))
+		verb := "wired post-import"
+		if dry {
+			verb = "will wire post-import"
+		}
+		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — %s: %s\n",
+			len(rp.DeferredEdges), verb, strings.Join(parts, ", "))
 	}
 	if len(rp.Removed) > 0 {
 		fmt.Fprintf(&b, "  removed ref(s) need supersede (§8): %s\n", strings.Join(rp.Removed, ", "))
