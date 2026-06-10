@@ -176,13 +176,14 @@ overwrite prior content. Follow this procedure:
 3. Write the full merged doc back via `--design-file -` (the field is replaced
    wholesale, which is why the read-merge step above is mandatory):
    ```bash
-   bd update <epic-id> --design-file - <<'EOF'
+   bd update <epic-id> --design-file - <<'WEFT_DESIGN_EOF'
    ## Domain
    ...
-   EOF
+   WEFT_DESIGN_EOF
    ```
-   The quoted heredoc delimiter (`'EOF'`) prevents shell expansion of
-   backticks and `$` in the doc body.
+   The quoted delimiter prevents shell expansion of backticks and `$` in the
+   doc body; the unique `WEFT_DESIGN_EOF` token avoids early termination if
+   the merged doc itself ever contains a bare `EOF` line.
 
 Do not remove or alter existing bullets unless the user explicitly revises a
 prior decision during this session.

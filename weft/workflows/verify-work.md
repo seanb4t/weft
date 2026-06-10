@@ -177,12 +177,15 @@ bd create --parent <epic-id> --type=bug --priority=<severity-mapped> \
   --title "UAT fix: <deliverable>" \
   --body-file - \
   --acceptance "<the failed checkpoint, restated as the pass condition>" \
-  --labels "uat-fix" <<'EOF'
+  --labels "uat-fix" <<'WEFT_UAT_EOF'
 <user words>
 
 Root cause: <diagnosed root cause>
-EOF
+WEFT_UAT_EOF
 ```
+
+The unique `WEFT_UAT_EOF` delimiter avoids early termination if the user's
+words ever contain a bare `EOF` line.
 
 where `<severity-mapped>` is the P-form from the §6 table (P1, P2, or P3).
 
