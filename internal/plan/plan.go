@@ -34,10 +34,21 @@ type Pick struct {
 	Labels      []string `json:"labels,omitempty"`
 }
 
+// Phase is one roadmap phase (phased-emission spec §1): emitted as a phase
+// sub-epic under the project epic, carrying its weft-ref:<ref> identity label.
+type Phase struct {
+	Ref         string   `json:"ref"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Acceptance  string   `json:"acceptance,omitempty"`
+	Needs       []string `json:"needs,omitempty"`
+}
+
 // WarpPlan is the whole authored artifact (spec §3).
 type WarpPlan struct {
-	Epic  Epic   `json:"epic"`
-	Picks []Pick `json:"picks"`
+	Epic   Epic    `json:"epic"`
+	Picks  []Pick  `json:"picks"`
+	Phases []Phase `json:"phases,omitempty"`
 }
 
 // Issue is one validation problem (an element of plan check's output, spec §5).
@@ -83,6 +94,12 @@ func Validate(p WarpPlan) []Issue {
 	if p.Epic.Title == "" {
 		issues = append(issues, Issue{Message: "epic.title is required"})
 	}
+	if len(p.Phases) > 0 && len(p.Picks) > 0 {
+		return append(issues, Issue{Message: "a plan carries phases or picks, not both"})
+	}
+	if len(p.Phases) > 0 {
+		return append(issues, validatePhases(p.Phases)...)
+	}
 	if len(p.Picks) == 0 {
 		issues = append(issues, Issue{Message: "at least one pick is required"})
 	}
@@ -126,6 +143,49 @@ func Validate(p WarpPlan) []Issue {
 			}
 			if !seen[n] {
 				issues = append(issues, Issue{Ref: pk.Ref, Message: fmt.Sprintf("pick.needs references unknown ref %q", n)})
+			}
+		}
+	}
+	return issues
+}
+
+// validatePhases mirrors the pick rules for the roadmap shape (spec §1).
+// Intentional delta: phases carry no priority or files fields, so the
+// corresponding pick checks are absent here by design.
+func validatePhases(phases []Phase) []Issue {
+	issues := []Issue{}
+	seen := map[string]bool{}
+	for _, ph := range phases {
+		switch {
+		case ph.Ref == "":
+			issues = append(issues, Issue{Message: "phase.ref is required"})
+			continue
+		case ph.Ref == EpicKey:
+			issues = append(issues, Issue{Ref: ph.Ref, Message: fmt.Sprintf("phase.ref %q is reserved", EpicKey)})
+			continue
+		case seen[ph.Ref]:
+			issues = append(issues, Issue{Ref: ph.Ref, Message: "duplicate phase.ref"})
+		}
+		seen[ph.Ref] = true
+		if !refPattern.MatchString(ph.Ref) {
+			issues = append(issues, Issue{Ref: ph.Ref, Message: fmt.Sprintf("phase.ref %q contains invalid characters (allowed: a-z A-Z 0-9 . _ -)", ph.Ref)})
+		}
+		if ph.Title == "" {
+			issues = append(issues, Issue{Ref: ph.Ref, Message: "phase.title is required"})
+		}
+		if ph.Description == "" {
+			issues = append(issues, Issue{Ref: ph.Ref, Message: "phase.description is required"})
+		}
+	}
+	for _, ph := range phases {
+		for _, n := range ph.Needs {
+			switch {
+			case n == ph.Ref:
+				issues = append(issues, Issue{Ref: ph.Ref, Message: "phase.needs references itself"})
+			case n == EpicKey:
+				issues = append(issues, Issue{Ref: ph.Ref, Message: fmt.Sprintf("phase.needs references reserved ref %q", EpicKey)})
+			case !seen[n]:
+				issues = append(issues, Issue{Ref: ph.Ref, Message: fmt.Sprintf("phase.needs references unknown ref %q", n)})
 			}
 		}
 	}
