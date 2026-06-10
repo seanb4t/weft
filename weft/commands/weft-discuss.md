@@ -38,7 +38,7 @@ driving scope. The workflow:
   recommended choice, one-line rationale),
 - deflects scope creep to a Deferred section, and
 - persists locked decisions to the epic's `design` field via
-  `bd update <epic-id> --design`.
+  `bd update <epic-id> --design-file -` (the stdin form).
 
 The per-phase planner (phase C) and executors consume the design field to
 answer HOW questions that would otherwise be guessed. The skill's output is

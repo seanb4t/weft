@@ -72,7 +72,7 @@ first level that yields at least one item):
 2. **Closed picks' acceptance criteria** — if the epic's acceptance field is
    empty, enumerate closed child picks:
    ```bash
-   bd show <epic-id> --children --json | jq -r '.[] | select(.status=="closed") | .id'
+   bd show <epic-id> --children --json | jq -r '.[] | arrays | .[] | select(.status=="closed") | .id'
    ```
    For each closed child, run `bd show <child-id> --json` and extract its
    acceptance criteria via jq path `.[0].acceptance_criteria`. Each acceptance
@@ -100,8 +100,10 @@ For each deliverable (in enumeration order, skipping already-passed items from
 3. Branch on response:
    - `yes`, `y`, or empty (Enter) → **pass**. Append note immediately:
      ```bash
-     bd note <epic-id> "verify-work: <deliverable> — pass"
+     printf '%s' "verify-work: <deliverable> — pass" | bd note <epic-id> --stdin
      ```
+     (Literal fixed-text notes may use the plain quoted form; use stdin whenever
+     the note contains bead-sourced text such as deliverable names.)
      Advance to the next item.
    - Any other response → **fail**. Record the user's exact words verbatim as
      the issue description. Append note immediately. Because the user's words
@@ -125,9 +127,9 @@ failure:
 
 | User wording signals | Severity | Priority mapping |
 |---|---|---|
-| crash, data loss, corruption, unrecoverable, hang | P1 (blocker) | `--priority=critical` |
-| doesn't work, fails, broken, not working, wrong output | P2 (major) | `--priority=high` |
-| looks off, cosmetic, alignment, typo, minor, slightly | P3 (minor) | `--priority=medium` |
+| crash, data loss, corruption, unrecoverable, hang | P1 (blocker) | `--priority=P1` |
+| doesn't work, fails, broken, not working, wrong output | P2 (major) | `--priority=P2` |
+| looks off, cosmetic, alignment, typo, minor, slightly | P3 (minor) | `--priority=P3` |
 
 When wording is ambiguous, default to P2. Record the inferred severity in the
 note (see §5) and use it when creating the fix pick (§8).
@@ -181,6 +183,8 @@ bd create --parent <epic-id> --type=bug --priority=<severity-mapped> \
 Root cause: <diagnosed root cause>
 EOF
 ```
+
+where `<severity-mapped>` is the P-form from the §6 table (P1, P2, or P3).
 
 The quoted heredoc delimiter (`'EOF'`) prevents shell expansion of backticks
 and `$` in the description body.
@@ -248,7 +252,7 @@ cannot — usability issues, missing edge-case behavior, cosmetic failures, and
 emergent integration problems that only appear when the full feature is exercised
 end-to-end.
 
-The two gates are complementary. This skill should run after `execute` completes
+This skill should run after `execute` completes
 and before `weft finish open`.
 
 ---

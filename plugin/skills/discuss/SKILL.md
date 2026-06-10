@@ -153,7 +153,7 @@ be present; use an empty body under a heading if nothing applies to it:
 <one bullet per locked decision: "**<area>:** <choice chosen> — <one-line rationale>">
 
 ## Canonical refs
-<bulleted list of file paths scouted in §2 that informed the options>
+<bulleted list of file paths scouted in §4 that informed the options>
 
 ## Specifics
 <any additional implementation details agreed during discussion that do not fit neatly under Decisions>
@@ -187,20 +187,15 @@ overwrite prior content. Follow this procedure:
 Do not remove or alter existing bullets unless the user explicitly revises a
 prior decision during this session.
 
-Persist with:
-
-```bash
-bd update <epic-id> --design-file - <<'EOF'
-## Domain
-...
-EOF
-```
-
 Then append an audit note:
 
 ```bash
-bd note <epic-id> "discuss: locked N decisions across M areas (<area list>)"
+printf '%s' "discuss: locked N decisions across M areas (<area list>)" \
+  | bd note <epic-id> --stdin
 ```
+
+(Literal fixed-text notes may use the plain quoted form; use stdin whenever
+the note contains bead-sourced text such as area names.)
 
 where N is the count of bullet points added to `## Decisions` and M is the
 count of areas discussed in this session.
@@ -214,8 +209,7 @@ before planning picks. Executors read it to resolve ambiguity during
 implementation. This skill's output is **complete** when the design field
 answers the HOW questions a planner would otherwise have to guess.
 
-Decisions not recorded here will be guessed by the planner. Decisions recorded
-here are authoritative for this phase.
+Decisions not recorded here will be guessed by the planner.
 
 ---
 
