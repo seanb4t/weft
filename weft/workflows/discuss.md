@@ -17,7 +17,7 @@ one-shot feature epic.
 (~4 single questions, 2–3 recommended-choice options), scope-creep deferral,
 and prior-decision skip are adapted from GSD Core's discuss-phase workflow.
 
-**Rewritten (§1–§5 tool-layer mapping):** all state is persisted to the epic's
+**Rewritten (§3–§7 tool-layer mapping):** all state is persisted to the epic's
 bead `design` field and notes via `bd update`/`bd note`. No external tracking
 artifacts are written or read — beads is the brain. GSD's mode flags
 (`--auto`, `--batch`, `--analyze`, `--assumptions`, `--all`, `--power`,
@@ -26,11 +26,15 @@ artifacts are written or read — beads is the brain. GSD's mode flags
 
 ---
 
-## 0. Input validation
+## 1. Inputs
 
 | Input | Description |
 |-------|-------------|
 | `epic-id` | The bead ID of the epic whose HOW decisions are being settled (required). |
+
+---
+
+## 2. Input validation
 
 Before interpolating `epic-id` into any shell command, validate its shape:
 
@@ -43,7 +47,7 @@ until a conforming id is supplied.
 
 ---
 
-## 1. Load the epic
+## 3. Load the epic
 
 ```bash
 bd show <epic-id>
@@ -61,7 +65,7 @@ If `bd show` fails (unknown id, network error), surface the error and stop.
 
 ---
 
-## 2. Scout implicated source files
+## 4. Scout implicated source files
 
 Read the source files, directories, and interfaces the epic's
 description/acceptance criteria name or strongly implicate. Use host file
@@ -79,7 +83,7 @@ explicitly; the scout step is still required to confirm the absence.
 
 ---
 
-## 3. Derive and present gray areas
+## 5. Derive and present gray areas
 
 From the epic goal and scouted files, derive the **phase-specific
 implementation decision areas** — the concrete choices this phase's planner
@@ -104,7 +108,7 @@ field. Do not manufacture discussion.
 
 ---
 
-## 4. Per-area question rhythm
+## 6. Per-area question rhythm
 
 For each selected area, ask up to **~4 single questions**, one at a time.
 
@@ -122,13 +126,13 @@ question. Stop the area early when all of its decisions are locked — do not
 fill the quota mechanically if fewer questions settle the area.
 
 **Scope creep:** if the user raises an idea that lies outside this epic's
-scope, acknowledge it, capture it in the Deferred section (see §5), and
+scope, acknowledge it, capture it in the Deferred section (see §7), and
 redirect the discussion to the current epic's domain. Do not expand scope
 mid-discussion.
 
 ---
 
-## 5. Persist locked decisions
+## 7. Persist locked decisions
 
 When discussion of all selected areas is complete (or when the user ends the
 session early), persist the locked decisions to the epic's design field.
@@ -176,7 +180,7 @@ count of areas discussed in this session.
 
 ---
 
-## 6. Consumer contract
+## 8. Consumer contract
 
 The per-phase planner (phase C of the spec) reads the epic's design field
 before planning picks. Executors read it to resolve ambiguity during
@@ -188,7 +192,7 @@ here are authoritative for this phase.
 
 ---
 
-## 7. Stop conditions
+## 9. Stop conditions
 
 The workflow terminates when:
 
@@ -200,7 +204,7 @@ The workflow terminates when:
 
 ---
 
-## 8. Dropped GSD mechanics
+## 10. Dropped GSD mechanics
 
 The following GSD discuss-phase mechanics are intentionally absent from this
 workflow:
