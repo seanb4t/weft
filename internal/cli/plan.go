@@ -255,7 +255,7 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		return err
 	}
 	defer cleanup()
-	res, err := run.BD(a.Runner, "import", path)
+	res, err := run.BD(a.Runner, "import", path, "--json")
 	if err != nil {
 		return exit.Hardf("bd import could not run: %v", err)
 	}
@@ -265,8 +265,45 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
+	// Parse the positional ids envelope from bd import --json.
+	// bd import --json emits {"created":N,"ids":[...],"schema_version":1} where
+	// ids[i] is the bead id for input JSONL line i (both create and update paths).
+	// This is load-bearing: if the count diverges the warp is structurally corrupt.
+	var importRecord struct {
+		Created int      `json:"created"`
+		IDs     []string `json:"ids"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &importRecord); err != nil {
+		return exit.Hardf("bd import --json output could not be parsed: %v — the warp is incomplete; investigate", err)
+	}
+	if len(importRecord.IDs) != len(rp.Expect) {
+		return exit.Hardf("bd import --json returned %d ids but %d records were written; positional contract violated — bd import --json guarantees ids[i] is the bead id for JSONL record i; a count mismatch means bd changed its contract or output was truncated — the warp is incomplete; investigate",
+			len(importRecord.IDs), len(rp.Expect))
+	}
+	// Build refToID from positional zip of rp.Expect[i].Ref with importRecord.IDs[i].
+	refToID := map[string]string{}
+	for i, ex := range rp.Expect {
+		refToID[ex.Ref] = importRecord.IDs[i]
+	}
+	// bd import ignores the JSONL "parent" field on both create and update paths
+	// (verified 2026-06-10), so parentage is wired post-import; this also makes
+	// the scoped readback below see the new picks.
+	for _, ref := range rp.Created {
+		id := refToID[ref]
+		if id == "" {
+			continue // positional contract already verified above; guard only
+		}
+		dep, err := run.BD(a.Runner, "dep", "add", id, epic, "--type", "parent-child")
+		if err != nil {
+			return exit.Hardf("re-plan applied but bd dep add (parent-child) for %s->%s could not run: %v", id, epic, err)
+		}
+		if dep.Code != 0 {
+			return exit.Hardf("re-plan applied but parent-child link for %s->%s could not be wired: %s — the warp is incomplete; investigate", id, epic, strings.TrimSpace(dep.Stderr))
+		}
+	}
 	// Post-import read-back: re-read the epic's children and verify that every
-	// authored field round-tripped through bd import (seam 9 §7).
+	// authored field round-tripped through bd import (seam 9 §7). Parent-child
+	// links were wired above, so the scoped readback now sees the new picks.
 	readback, err := a.warpReadback(epic)
 	if err != nil {
 		return err

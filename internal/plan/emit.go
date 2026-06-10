@@ -167,12 +167,15 @@ type ExistingBead struct {
 // per pick (spec §7): upsert keyed by id (empty id => create). Status is set
 // only for matched picks, to preserve their lifecycle state across a re-plan.
 type importRecord struct {
-	ID           string      `json:"id,omitempty"`
-	Title        string      `json:"title"`
-	Description  string      `json:"description,omitempty"`
-	IssueType    string      `json:"issue_type"`
-	Priority     int         `json:"priority"`
-	Status       string      `json:"status,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	IssueType   string `json:"issue_type"`
+	Priority    int    `json:"priority"`
+	Status      string `json:"status,omitempty"`
+	// Parent is ignored by bd import on both create and update paths (verified
+	// 2026-06-10); parentage is wired post-import by the CLI via bd dep add
+	// --type parent-child. Kept for forward-compatibility.
 	Parent       string      `json:"parent,omitempty"`
 	Labels       []string    `json:"labels"`
 	Dependencies []importDep `json:"dependencies,omitempty"`

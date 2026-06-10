@@ -183,12 +183,16 @@ func TestPlanEmitRefusesInvalidPlan(t *testing.T) {
 
 func TestPlanEmitReplanUpsertsMatchedRef(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A2","description":"updated"}]}`)
+	pickRecord := `[{"id":"weft-hjx.9.1","status":"open","title":"A2","priority":2,"labels":["weft-ref:a"],"description":"updated"}]`
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
 		j := strings.Join(append([]string{name}, args...), " ")
 		if strings.Contains(j, "bd list --parent weft-hjx.9") {
-			// Serve the full record for both pre-import ref-map and post-import
-			// read-back: include title/priority/description so verification passes.
-			return run.Result{Stdout: `[{"id":"weft-hjx.9.1","status":"open","title":"A2","priority":2,"labels":["weft-ref:a"],"description":"updated"}]`, Code: 0}
+			// Both pre-import ref-map and post-import scoped readback.
+			return run.Result{Stdout: pickRecord, Code: 0}
+		}
+		if strings.HasPrefix(strings.Join(args, " "), "import") {
+			// Positional ids envelope: one updated pick (ids[0] = existing id).
+			return run.Result{Stdout: `{"created":0,"ids":["weft-hjx.9.1"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -313,15 +317,20 @@ func TestPlanEmitReplanMalformedListJSONIsHard(t *testing.T) {
 func TestPlanEmitReplanEmptyListCreatesAll(t *testing.T) {
 	// An epic with no existing children: every pick is a create, import runs cleanly.
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
-	listCount := 0
+	importCalled := false
 	r := &routeRunner{fn: func(name string, args []string) run.Result {
-		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
-			listCount++
-			if listCount == 1 {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			if !importCalled {
 				return run.Result{Stdout: `[]`, Code: 0} // pre-import: no existing picks
 			}
-			// Post-import read-back: the newly created pick is present.
+			// Post-import scoped readback: newly created pick now visible (parent wired).
 			return run.Result{Stdout: `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`, Code: 0}
+		}
+		if strings.HasPrefix(j, "import") {
+			importCalled = true
+			// Positional ids envelope: one created pick (ids[0] = new id).
+			return run.Result{Stdout: `{"created":1,"ids":["e.1"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -495,18 +504,16 @@ func TestPlanEmitAllowDropWithEpicIsInvocationError(t *testing.T) {
 
 func TestPlanReplanSurfacesImportStderr(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
-	// After import, a second bd list --parent is made for read-back.
-	// Both list calls return the same result here: the read-back just needs the
-	// pick present with the authored label so verification passes.
+	pickRecord := `[{"id":"weft-abc.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.HasPrefix(j, "list --parent") {
-			// Serve a consistent record for both pre-import ref-map and post-import
-			// read-back. The pick "a" is present with its weft-ref label.
-			return run.Result{Stdout: `[{"id":"weft-abc.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`, Code: 0}
+			// Both pre-import ref-map and post-import scoped readback: pick a present.
+			return run.Result{Stdout: pickRecord, Code: 0}
 		}
 		if strings.HasPrefix(j, "import") {
-			return run.Result{Stdout: "imported 1", Stderr: "warning: something bd noticed", Code: 0}
+			// Positional ids envelope with stderr warning.
+			return run.Result{Stdout: `{"created":0,"ids":["weft-abc.1"],"schema_version":1}`, Stderr: "warning: something bd noticed", Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -522,23 +529,23 @@ func TestPlanReplanSurfacesImportStderr(t *testing.T) {
 	}
 }
 
-// TestPlanReplanReadbackFailIsHard — post-import bd list returns non-zero → hard exit 2.
+// TestPlanReplanReadbackFailIsHard — post-import bd list --parent returns non-zero → hard exit 2.
 func TestPlanReplanReadbackFailIsHard(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
-	listCount := 0
+	importCalled := false
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.HasPrefix(j, "list --parent") {
-			listCount++
-			if listCount == 1 {
-				// First call: pre-import ref resolution (no existing picks).
+			if !importCalled {
+				// Pre-import ref resolution: no existing picks.
 				return run.Result{Stdout: `[]`, Code: 0}
 			}
-			// Second call: post-import read-back fails.
+			// Post-import scoped readback fails.
 			return run.Result{Code: 1, Stderr: "bd list read-back boom"}
 		}
 		if strings.HasPrefix(j, "import") {
-			return run.Result{Stdout: "imported 1", Code: 0}
+			importCalled = true
+			return run.Result{Stdout: `{"created":1,"ids":["e.1"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -551,22 +558,23 @@ func TestPlanReplanReadbackFailIsHard(t *testing.T) {
 func TestPlanReplanReadbackDropIsHard(t *testing.T) {
 	// Plan has a pick with an authored label "phase:alpha" that bd drops.
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a","labels":["phase:alpha"]}]}`)
-	listCount := 0
+	importCalled := false
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.HasPrefix(j, "list --parent") {
-			listCount++
-			if listCount == 1 {
+			if !importCalled {
+				// Pre-import ref resolution: no existing picks.
 				return run.Result{Stdout: `[]`, Code: 0}
 			}
-			// Read-back: "phase:alpha" is absent — simulates bd dropping the label.
+			// Post-import scoped readback: "phase:alpha" absent — simulates bd dropping the label.
 			return run.Result{
 				Stdout: `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`,
 				Code:   0,
 			}
 		}
 		if strings.HasPrefix(j, "import") {
-			return run.Result{Stdout: "imported 1", Code: 0}
+			importCalled = true
+			return run.Result{Stdout: `{"created":1,"ids":["e.1"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -582,22 +590,23 @@ func TestPlanReplanReadbackDropIsHard(t *testing.T) {
 // TestPlanReplanReadbackHappyPath — all fields match; exit 0 with verification marker.
 func TestPlanReplanReadbackHappyPath(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
-	listCount := 0
+	importCalled := false
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.HasPrefix(j, "list --parent") {
-			listCount++
-			if listCount == 1 {
+			if !importCalled {
+				// Pre-import ref resolution: no existing picks.
 				return run.Result{Stdout: `[]`, Code: 0}
 			}
-			// Read-back: all authored fields present.
+			// Post-import scoped readback: all authored fields present.
 			return run.Result{
 				Stdout: `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`,
 				Code:   0,
 			}
 		}
 		if strings.HasPrefix(j, "import") {
-			return run.Result{Stdout: "imported 1", Code: 0}
+			importCalled = true
+			return run.Result{Stdout: `{"created":1,"ids":["e.1"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -767,26 +776,25 @@ func TestPlanEmitRoadmapEchoesPhaseIDs(t *testing.T) {
 }
 
 // TestPlanReplanReadbackMalformedJSONIsHard covers the warpReadback json.Unmarshal
-// error branch: the pre-import list call returns valid JSON (so ref resolution and
-// replan build succeed), bd import succeeds, but the post-import list call (the
-// read-back, i.e. the second list call) returns malformed JSON. The command must
-// exit 2 (hard error).
+// error branch: the pre-import list --parent call returns valid JSON (so ref
+// resolution and replan build succeed), bd import --json succeeds, but the
+// post-import scoped list --parent read-back returns malformed JSON. Exit 2.
 func TestPlanReplanReadbackMalformedJSONIsHard(t *testing.T) {
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
-	listCount := 0
+	importCalled := false
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		if strings.HasPrefix(j, "list --parent") {
-			listCount++
-			if listCount == 1 {
+			if !importCalled {
 				// Pre-import list: valid JSON so ref resolution succeeds.
 				return run.Result{Stdout: `[]`, Code: 0}
 			}
-			// Read-back (second call): malformed JSON triggers json.Unmarshal error.
+			// Post-import scoped read-back: malformed JSON triggers json.Unmarshal error.
 			return run.Result{Stdout: `not valid json {{{`, Code: 0}
 		}
 		if strings.HasPrefix(j, "import") {
-			return run.Result{Stdout: "imported 1", Code: 0}
+			importCalled = true
+			return run.Result{Stdout: `{"created":1,"ids":["e.1"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -796,29 +804,62 @@ func TestPlanReplanReadbackMalformedJSONIsHard(t *testing.T) {
 	}
 }
 
+// TestPlanEmitReplanIDsCountMismatchIsHard verifies the positional-contract guard:
+// if bd import --json returns fewer ids than records written the warp is structurally
+// incomplete and the command must exit 2 immediately.
+func TestPlanEmitReplanIDsCountMismatchIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.HasPrefix(j, "list --parent") {
+			return run.Result{Stdout: `[]`, Code: 0}
+		}
+		if strings.HasPrefix(j, "import") {
+			// Return zero ids for one record — positional contract violated.
+			return run.Result{Stdout: `{"created":0,"ids":[],"schema_version":1}`, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("ids count mismatch must be a hard error (exit 2), got %d (err=%v)", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "positional contract") {
+		t.Errorf("error must mention positional contract, got: %v", err)
+	}
+}
+
 func TestPlanEmitReplanAppliesDeferredEdges(t *testing.T) {
 	// Plan: existing pick a (matched), new pick b with needs:[a] -> the a<-b
 	// edge is deferred past import and must be wired via bd dep add using the
-	// post-import readback ids.
+	// post-import readback ids. bd import ignores "parent" in JSONL, so a
+	// parent-child dep add is also issued for the newly created pick b.
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[`+
 		`{"ref":"a","title":"A","description":"a"},`+
 		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
 	preImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
 	postImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
 		`{"id":"w-b","status":"open","title":"B","priority":2,"labels":["weft-ref:b"],"description":"b"}]`
-	listCalls := 0
-	var depArgs []string
+	importCalled := false
+	var blocksDepArgs []string
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		switch {
 		case strings.Contains(j, "list --parent"):
-			listCalls++
-			if listCalls == 1 {
+			if !importCalled {
 				return run.Result{Stdout: preImport, Code: 0}
 			}
+			// Post-import scoped readback: both picks visible (parent wired for b).
 			return run.Result{Stdout: postImport, Code: 0}
+		case strings.HasPrefix(j, "import"):
+			importCalled = true
+			// sortedPicks: a(0)=w-a, b(1)=w-b; a matched (created:0 from it), b created.
+			return run.Result{Stdout: `{"created":1,"ids":["w-a","w-b"],"schema_version":1}`, Code: 0}
+		case strings.Contains(j, "dep add") && strings.Contains(j, "--type blocks"):
+			blocksDepArgs = args
+			return run.Result{Code: 0}
 		case strings.Contains(j, "dep add"):
-			depArgs = args
+			// parent-child wiring for b — always succeeds
 			return run.Result{Code: 0}
 		}
 		return run.Result{Code: 0}
@@ -828,8 +869,8 @@ func TestPlanEmitReplanAppliesDeferredEdges(t *testing.T) {
 		t.Fatalf("execute: %v", err)
 	}
 	want := strings.Join([]string{"dep", "add", "w-b", "w-a", "--type", "blocks"}, " ")
-	if strings.Join(depArgs, " ") != want {
-		t.Errorf("dep add args = %v, want %q", depArgs, want)
+	if strings.Join(blocksDepArgs, " ") != want {
+		t.Errorf("blocks dep add args = %v, want %q", blocksDepArgs, want)
 	}
 	if !strings.Contains(out.String(), `"applied_edges"`) || strings.Contains(out.String(), `"deferred_edges"`) {
 		t.Errorf("envelope key must be applied_edges (renamed): %q", out.String())
@@ -837,22 +878,19 @@ func TestPlanEmitReplanAppliesDeferredEdges(t *testing.T) {
 }
 
 func TestPlanEmitReplanDepAddFailureIsHard(t *testing.T) {
+	// Exercises the parent-child wiring failure (the first dep add to fire): any
+	// dep add failure must hard-fail exit 2.
 	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[`+
 		`{"ref":"a","title":"A","description":"a"},`+
 		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
 	preImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
-	postImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
-		`{"id":"w-b","status":"open","title":"B","priority":2,"labels":["weft-ref:b"],"description":"b"}]`
-	listCalls := 0
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
 		j := strings.Join(args, " ")
 		switch {
 		case strings.Contains(j, "list --parent"):
-			listCalls++
-			if listCalls == 1 {
-				return run.Result{Stdout: preImport, Code: 0}
-			}
-			return run.Result{Stdout: postImport, Code: 0}
+			return run.Result{Stdout: preImport, Code: 0}
+		case strings.HasPrefix(j, "import"):
+			return run.Result{Stdout: `{"created":1,"ids":["w-a","w-b"],"schema_version":1}`, Code: 0}
 		case strings.Contains(j, "dep add"):
 			return run.Result{Code: 1, Stderr: "boom"}
 		}
@@ -871,8 +909,13 @@ func TestPlanEmitReplanUnresolvableEdgeIsHard(t *testing.T) {
 		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
 	preImport := `[{"id":"w-a","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"}]`
 	r := &routeRunner{fn: func(_ string, args []string) run.Result {
-		if strings.Contains(strings.Join(args, " "), "list --parent") {
-			return run.Result{Stdout: preImport, Code: 0} // same both times: b never appears
+		j := strings.Join(args, " ")
+		if strings.Contains(j, "list --parent") {
+			// Both pre-import and post-import: b never appears (bd silently didn't create it).
+			return run.Result{Stdout: preImport, Code: 0}
+		}
+		if strings.HasPrefix(j, "import") {
+			return run.Result{Stdout: `{"created":1,"ids":["w-a","w-b"],"schema_version":1}`, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
