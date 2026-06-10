@@ -104,7 +104,7 @@ func TestPlanEmitFirstCreatesGraph(t *testing.T) {
 		if strings.Contains(strings.Join(args, " "), "--dry-run") {
 			return dryRunOK(2, 0)
 		}
-		return run.Result{Stdout: "created weft-zzz", Code: 0}
+		return graphCreateOK(`{"@epic":"w-1","a":"w-2"}`)
 	}}
 	out, err := newTestCmd(r, "plan", "emit", file, "--json")
 	if err != nil {
@@ -380,7 +380,7 @@ func TestPlanEmitDropWithAllowSurfacesWarningAndProceeds(t *testing.T) {
 		if strings.Contains(strings.Join(args, " "), "--dry-run") {
 			return dryRunWithDrop()
 		}
-		return run.Result{Stdout: "created", Code: 0}
+		return graphCreateOK(`{"@epic":"w-1","a":"w-2"}`)
 	}}
 	out, err := newTestCmd(r, "plan", "emit", file, "--allow-drop", "--json")
 	if err != nil {
@@ -420,7 +420,7 @@ func TestPlanEmitSchemaMismatchIsSoft(t *testing.T) {
 		if strings.Contains(strings.Join(args, " "), "--dry-run") {
 			return run.Result{Stdout: `{"node_count":2,"edge_count":0,"schema_version":99}`, Code: 0}
 		}
-		return run.Result{Stdout: "created", Code: 0}
+		return graphCreateOK(`{"@epic":"w-1","a":"w-2"}`)
 	}}
 	out, err := newTestCmd(r, "plan", "emit", file, "--json")
 	if err != nil {
@@ -469,7 +469,7 @@ func TestPlanEmitPreflightNoteAppearsInWarnings(t *testing.T) {
 				Code:   0,
 			}
 		}
-		return run.Result{Stdout: "created", Code: 0}
+		return graphCreateOK(`{"@epic":"w-1","a":"w-2"}`)
 	}}
 	out, err := newTestCmd(r, "plan", "emit", file, "--json")
 	if err != nil {
@@ -687,7 +687,7 @@ func TestPlanEmitRoadmapLiveEnvelope(t *testing.T) {
 		if strings.Contains(strings.Join(args, " "), "--dry-run") {
 			return dryRunOK(3, 1)
 		}
-		return run.Result{Stdout: "created", Code: 0}
+		return graphCreateOK(`{"@epic":"w-1","p1":"w-2","p2":"w-3"}`)
 	}}
 	out, err := newTestCmd(r, "plan", "emit", file, "--json")
 	if err != nil {
@@ -699,6 +699,70 @@ func TestPlanEmitRoadmapLiveEnvelope(t *testing.T) {
 	}
 	if strings.Contains(s, `"picks"`) {
 		t.Errorf("picks key must be absent on the live roadmap path: %q", s)
+	}
+	if !strings.Contains(s, `"p1": "w-2"`) {
+		t.Errorf("live roadmap envelope must carry phase ids: %q", s)
+	}
+}
+
+// graphCreateOK scripts bd's real (non-dry-run) create --graph --json output.
+// Shape verified live (bd 1.0.x, 2026-06-10): {"ids":{...},"schema_version":1}.
+func graphCreateOK(ids string) run.Result {
+	return run.Result{Stdout: `{"ids":` + ids + `,"schema_version":1}`, Code: 0}
+}
+
+func TestPlanEmitEchoesIDs(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		if strings.Contains(j, "--dry-run") {
+			return dryRunOK(2, 0)
+		}
+		if strings.Contains(j, "create --graph") {
+			if !strings.Contains(j, "--json") {
+				t.Errorf("real create must pass --json: %v", args)
+			}
+			return graphCreateOK(`{"@epic":"w-1","a":"w-2"}`)
+		}
+		return run.Result{}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `"@epic": "w-1"`) || !strings.Contains(s, `"a": "w-2"`) {
+		t.Errorf("envelope must carry the ids map: %q", s)
+	}
+}
+
+func TestPlanEmitUnparseableIDsIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return dryRunOK(2, 0)
+		}
+		return run.Result{Stdout: "created weft-zzz", Code: 0} // pre-ids legacy stdout
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file)); got != 2 {
+		t.Fatalf("unparseable ids must exit 2 (loud, never degraded), got %d", got)
+	}
+}
+
+func TestPlanEmitRoadmapEchoesPhaseIDs(t *testing.T) {
+	file := writePlanFile(t, roadmapPlanJSON)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return dryRunOK(3, 1)
+		}
+		return graphCreateOK(`{"@epic":"w-1","p1":"w-2","p2":"w-3"}`)
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(out.String(), `"p1": "w-2"`) {
+		t.Errorf("roadmap envelope must carry phase ids: %q", out.String())
 	}
 }
 

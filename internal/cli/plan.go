@@ -129,12 +129,23 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 		return Emit(cmd, "plan.emit", data, planPreviewText("create", wp, d))
 	}
 
-	res, err := run.BD(a.Runner, "create", "--graph", path)
+	res, err := run.BD(a.Runner, "create", "--graph", path, "--json")
 	if err != nil {
 		return exit.Hardf("bd create --graph could not run: %v", err)
 	}
 	if res.Code != 0 {
 		return exit.Hardf("bd create --graph failed: %s", strings.TrimSpace(res.Stderr))
+	}
+	// Parse the ids map (node key -> created bead id). Shape verified live:
+	// {"ids":{"@epic":"...","<ref>":"..."},"schema_version":1}. The warp was
+	// already created at this point, so a parse failure is a hard error (loud,
+	// never a silently degraded envelope) — the operator must investigate.
+	var applied struct {
+		IDs map[string]string `json:"ids"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &applied); err != nil || len(applied.IDs) == 0 {
+		return exit.Hardf("warp created but bd create --graph --json output is unparseable (ids missing) — investigate before re-running (a re-run would duplicate the warp): %v\noutput: %s",
+			err, strings.TrimSpace(res.Stdout))
 	}
 	// Surface any warning the real create emits on success.
 	if s := strings.TrimSpace(res.Stderr); s != "" {
@@ -147,18 +158,19 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	data := map[string]any{
 		"mode": "create", "created": created, "edges": d.Edges,
 		"tolerated": d.Tolerated, "schema_version": pf.SchemaVersion,
-		"warnings": warnings, "bd_output": strings.TrimSpace(res.Stdout),
+		"warnings": warnings, "ids": applied.IDs,
+		"bd_output": strings.TrimSpace(res.Stdout),
 	}
 	if isRoadmap {
 		data["phases"] = len(wp.Phases)
 	}
 	var text string
 	if isRoadmap {
-		text = fmt.Sprintf("emitted roadmap: %d phase(s)\n%s",
-			len(wp.Phases), strings.TrimSpace(res.Stdout))
+		text = fmt.Sprintf("emitted roadmap: %d phase(s)\nepic: %s",
+			len(wp.Phases), applied.IDs["@epic"])
 	} else {
-		text = fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\n%s",
-			len(wp.Picks), len(d.Edges), len(d.Tolerated), strings.TrimSpace(res.Stdout))
+		text = fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\nepic: %s",
+			len(wp.Picks), len(d.Edges), len(d.Tolerated), applied.IDs["@epic"])
 	}
 	return Emit(cmd, "plan.emit", data, text)
 }
