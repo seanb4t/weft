@@ -66,6 +66,8 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 // gated by a bd-backed dry-run preflight that refuses to silently drop fields
 // (seam 9 / docs/seams/09-emit-field-drop-guard.md).
 func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, dryRun, allowDrop bool) error {
+	isRoadmap := len(wp.Phases) > 0
+
 	graph, err := plan.GraphJSON(wp, d)
 	if err != nil {
 		return err
@@ -89,7 +91,13 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if err != nil {
 		return exit.Hardf("%v", err)
 	}
-	issues := plan.CheckPreflight(pf, 1+len(wp.Picks), len(d.Edges))
+	wantNodes, wantEdges := 1+len(wp.Picks), len(d.Edges)
+	if isRoadmap {
+		// Roadmap path: phase edges come from authored needs inside GraphJSON,
+		// not from Derive — d.Edges is always empty here and must not be used.
+		wantNodes, wantEdges = plan.RoadmapCounts(wp)
+	}
+	issues := plan.CheckPreflight(pf, wantNodes, wantEdges)
 
 	warnings := []string{}
 	if issues.CountMismatch != "" {
@@ -110,30 +118,60 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if dryRun {
 		data := map[string]any{
 			"dry_run": true, "mode": "create", "epic": wp.Epic.Title,
-			"picks": len(wp.Picks), "edges": d.Edges, "tolerated": d.Tolerated,
+			"edges": d.Edges, "tolerated": d.Tolerated,
 			"schema_version": pf.SchemaVersion, "warnings": warnings,
+		}
+		if isRoadmap {
+			data["phases"] = len(wp.Phases)
+		} else {
+			data["picks"] = len(wp.Picks)
 		}
 		return Emit(cmd, "plan.emit", data, planPreviewText("create", wp, d))
 	}
 
-	res, err := run.BD(a.Runner, "create", "--graph", path)
+	res, err := run.BD(a.Runner, "create", "--graph", path, "--json")
 	if err != nil {
 		return exit.Hardf("bd create --graph could not run: %v", err)
 	}
 	if res.Code != 0 {
 		return exit.Hardf("bd create --graph failed: %s", strings.TrimSpace(res.Stderr))
 	}
+	// Parse the ids map (node key -> created bead id). Shape verified live:
+	// {"ids":{"@epic":"...","<ref>":"..."},"schema_version":1}. The warp was
+	// already created at this point, so a parse failure is a hard error (loud,
+	// never a silently degraded envelope) — the operator must investigate.
+	var applied struct {
+		IDs map[string]string `json:"ids"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &applied); err != nil || len(applied.IDs) == 0 {
+		return exit.Hardf("warp created but bd create --graph --json output is unparseable (ids missing) — investigate before re-running (a re-run would duplicate the warp): %v\noutput: %s",
+			err, strings.TrimSpace(res.Stdout))
+	}
 	// Surface any warning the real create emits on success.
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
-	data := map[string]any{
-		"mode": "create", "created": len(wp.Picks), "edges": d.Edges,
-		"tolerated": d.Tolerated, "schema_version": pf.SchemaVersion,
-		"warnings": warnings, "bd_output": strings.TrimSpace(res.Stdout),
+	created := len(wp.Picks)
+	if isRoadmap {
+		created = len(wp.Phases)
 	}
-	text := fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\n%s",
-		len(wp.Picks), len(d.Edges), len(d.Tolerated), strings.TrimSpace(res.Stdout))
+	data := map[string]any{
+		"mode": "create", "created": created, "edges": d.Edges,
+		"tolerated": d.Tolerated, "schema_version": pf.SchemaVersion,
+		"warnings": warnings, "ids": applied.IDs,
+		"bd_output": strings.TrimSpace(res.Stdout),
+	}
+	if isRoadmap {
+		data["phases"] = len(wp.Phases)
+	}
+	var text string
+	if isRoadmap {
+		text = fmt.Sprintf("emitted roadmap: %d phase(s)\nepic: %s",
+			len(wp.Phases), applied.IDs["@epic"])
+	} else {
+		text = fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\nepic: %s",
+			len(wp.Picks), len(d.Edges), len(d.Tolerated), applied.IDs["@epic"])
+	}
 	return Emit(cmd, "plan.emit", data, text)
 }
 
@@ -169,7 +207,12 @@ func writeTempPayload(pattern string, payload []byte) (string, func(), error) {
 // warn+tolerate overlaps the human is approving.
 func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "DRY RUN (%s) — epic %q, %d pick(s), %d edge(s)\n", mode, wp.Epic.Title, len(wp.Picks), len(d.Edges))
+	if len(wp.Phases) > 0 {
+		fmt.Fprintf(&b, "DRY RUN (%s) — epic %q, %d phase(s) (roadmap)\n", mode, wp.Epic.Title, len(wp.Phases))
+	} else {
+		fmt.Fprintf(&b, "DRY RUN (%s) — epic %q, %d pick(s), %d edge(s)\n", mode, wp.Epic.Title, len(wp.Picks), len(d.Edges))
+	}
+	// d.Edges is empty on the roadmap path; this loop is a no-op there.
 	for _, e := range d.Edges {
 		fmt.Fprintf(&b, "  edge: %s depends on %s\n", e.From, e.To)
 	}
@@ -185,8 +228,12 @@ func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 
 // planReplan upserts an existing warp via bd import (spec §7): resolve the
 // ref->bead map from the epic's weft-ref labels, build the upsert payload, and
-// (unless --dry-run) apply it. New-pick dependency edges and removed-pick
-// supersede are surfaced as data but NOT applied (§8 sub-seams).
+// (unless --dry-run) apply it. Sequence: (1) bd import, (2) parent-child wiring
+// for new picks via bd dep add (bd import ignores the JSONL parent field —
+// verified 2026-06-10), (3) post-import read-back to verify authored fields
+// round-tripped (seam 9 §7), (4) DeferredEdge wiring for edges touching a new
+// pick via bd dep add --type blocks (seam-2 §8). Removed-pick supersede remains
+// a §8 open sub-seam.
 func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, epic string, dryRun bool) error {
 	existing, err := a.warpRefMap(epic)
 	if err != nil {
@@ -201,7 +248,8 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		data := map[string]any{
 			"dry_run": true, "mode": "upsert", "epic": epic,
 			"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
-			"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+			// applied_edges: same key as live; on dry-run these are the edges that WILL be wired post-import.
+			"applied_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 			"warnings": warnings,
 		}
 		return Emit(cmd, "plan.emit", data, replanText(epic, rp, true))
@@ -211,7 +259,7 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		return err
 	}
 	defer cleanup()
-	res, err := run.BD(a.Runner, "import", path)
+	res, err := run.BD(a.Runner, "import", path, "--json")
 	if err != nil {
 		return exit.Hardf("bd import could not run: %v", err)
 	}
@@ -221,8 +269,45 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
+	// Parse the positional ids envelope from bd import --json.
+	// bd import --json emits {"created":N,"ids":[...],"schema_version":1} where
+	// ids[i] is the bead id for input JSONL line i (both create and update paths).
+	// This is load-bearing: if the count diverges the warp is structurally corrupt.
+	var importRecord struct {
+		Created int      `json:"created"`
+		IDs     []string `json:"ids"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &importRecord); err != nil {
+		return exit.Hardf("bd import --json output could not be parsed: %v — the warp is incomplete; investigate", err)
+	}
+	if len(importRecord.IDs) != len(rp.Expect) {
+		return exit.Hardf("bd import --json returned %d ids but %d records were written; positional contract violated — bd import --json guarantees ids[i] is the bead id for JSONL record i; a count mismatch means bd changed its contract or output was truncated — the warp is incomplete; investigate",
+			len(importRecord.IDs), len(rp.Expect))
+	}
+	// Build refToID from positional zip of rp.Expect[i].Ref with importRecord.IDs[i].
+	refToID := map[string]string{}
+	for i, ex := range rp.Expect {
+		refToID[ex.Ref] = importRecord.IDs[i]
+	}
+	// bd import ignores the JSONL "parent" field on both create and update paths
+	// (verified 2026-06-10), so parentage is wired post-import; this also makes
+	// the scoped readback below see the new picks.
+	for i, ref := range rp.Created {
+		id := refToID[ref]
+		if id == "" {
+			return exit.Hardf("re-plan applied but bd import returned an empty id for created ref %q (record %d); the pick is orphaned and the warp is incomplete — investigate", ref, i)
+		}
+		dep, err := run.BD(a.Runner, "dep", "add", id, epic, "--type", "parent-child")
+		if err != nil {
+			return exit.Hardf("re-plan applied but bd dep add (parent-child) for %s->%s could not run: %v", id, epic, err)
+		}
+		if dep.Code != 0 {
+			return exit.Hardf("re-plan applied but parent-child link for %s->%s could not be wired: %s — the warp is incomplete; investigate", id, epic, strings.TrimSpace(dep.Stderr))
+		}
+	}
 	// Post-import read-back: re-read the epic's children and verify that every
-	// authored field round-tripped through bd import (seam 9 §7).
+	// authored field round-tripped through bd import (seam 9 §7). Parent-child
+	// links were wired above, so the scoped readback now sees the new picks.
 	readback, err := a.warpReadback(epic)
 	if err != nil {
 		return err
@@ -231,10 +316,28 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		return exit.Hardf("plan emit replan applied but %d authored field(s) did not round-trip (bd dropped them); the warp is incomplete — investigate:\n%s",
 			len(disc), strings.Join(disc, "\n"))
 	}
+	// Wire blocks edges that touched a new pick (seam-2 §7; formerly the §8 sub-seam,
+	// shipped in weft-ccy.5) — bd import cannot forward-reference ids inside a
+	// batch, so they are applied post-import from the readback map. Any failure
+	// leaves the warp structurally incomplete: hard.
+	for i, e := range rp.DeferredEdges {
+		from, fok := readback[e.From]
+		to, tok := readback[e.To]
+		if !fok || !tok || from.ID == "" || to.ID == "" {
+			return exit.Hardf("re-plan applied but edge %s->%s could not be resolved post-import (edge %d/%d; %d already wired); the warp is incomplete — investigate", e.From, e.To, i+1, len(rp.DeferredEdges), i)
+		}
+		dep, err := run.BD(a.Runner, "dep", "add", from.ID, to.ID, "--type", "blocks")
+		if err != nil {
+			return exit.Hardf("re-plan applied but bd dep add could not run for %s->%s (edge %d/%d; %d already wired): %v", e.From, e.To, i+1, len(rp.DeferredEdges), i, err)
+		}
+		if dep.Code != 0 {
+			return exit.Hardf("re-plan applied but edge %s->%s could not be wired (edge %d/%d; %d already wired): %s — the warp is incomplete; investigate", e.From, e.To, i+1, len(rp.DeferredEdges), i, strings.TrimSpace(dep.Stderr))
+		}
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
-		"deferred_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+		"applied_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
 		"verification": []string{},
 	}
@@ -297,6 +400,7 @@ func (a *App) warpRefMap(epic string) (map[string]plan.ExistingBead, error) {
 func (a *App) warpReadback(epic string) (map[string]plan.ReadbackBead, error) {
 	return warpScan(a, epic, "post-import read-back", func(it warpChild) plan.ReadbackBead {
 		return plan.ReadbackBead{
+			ID:          it.ID,
 			Title:       it.Title,
 			Priority:    it.Priority,
 			Labels:      it.Labels,
@@ -319,8 +423,12 @@ func replanText(epic string, rp plan.Replan, dry bool) string {
 		for i, e := range rp.DeferredEdges {
 			parts[i] = fmt.Sprintf("%s->%s", e.From, e.To)
 		}
-		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — wire after creation (§8): %s\n",
-			len(rp.DeferredEdges), strings.Join(parts, ", "))
+		verb := "wired post-import"
+		if dry {
+			verb = "will wire post-import"
+		}
+		fmt.Fprintf(&b, "  %d edge(s) touch a new pick — %s: %s\n",
+			len(rp.DeferredEdges), verb, strings.Join(parts, ", "))
 	}
 	if len(rp.Removed) > 0 {
 		fmt.Fprintf(&b, "  removed ref(s) need supersede (§8): %s\n", strings.Join(rp.Removed, ", "))
@@ -344,6 +452,9 @@ func (a *App) newPlanCheckCmd() *cobra.Command {
 			issues := plan.Validate(wp)
 			data := map[string]any{"valid": len(issues) == 0, "issues": issues}
 			text := fmt.Sprintf("valid: %d pick(s), no issues", len(wp.Picks))
+			if len(wp.Phases) > 0 {
+				text = fmt.Sprintf("valid: %d phase(s), no issues", len(wp.Phases))
+			}
 			if len(issues) > 0 {
 				var b strings.Builder
 				fmt.Fprintf(&b, "INVALID: %d issue(s)", len(issues))

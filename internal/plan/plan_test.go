@@ -6,6 +6,7 @@ package plan
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -169,6 +170,86 @@ func TestValidateAcceptsDotsHyphensUnderscores(t *testing.T) {
 	}
 	if got := Validate(p); len(got) != 0 {
 		t.Fatalf("want valid, got issues: %+v", got)
+	}
+}
+
+func phasesPlan(phases ...Phase) WarpPlan {
+	return WarpPlan{Epic: Epic{Title: "E", Description: "d"}, Phases: phases}
+}
+
+func TestValidatePhasesAndPicksMutuallyExclusive(t *testing.T) {
+	p := WarpPlan{
+		Epic:   Epic{Title: "E"},
+		Picks:  []Pick{{Ref: "a", Title: "A", Description: "a"}},
+		Phases: []Phase{{Ref: "p1", Title: "P1", Description: "p"}},
+	}
+	issues := Validate(p)
+	found := false
+	for _, is := range issues {
+		if strings.Contains(is.Message, "phases or picks, not both") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want mutual-exclusion issue, got %v", issues)
+	}
+}
+
+func TestValidateRoadmapHappyPath(t *testing.T) {
+	p := phasesPlan(
+		Phase{Ref: "p1", Title: "P1", Description: "first"},
+		Phase{Ref: "p2", Title: "P2", Description: "second", Needs: []string{"p1"}},
+	)
+	if issues := Validate(p); len(issues) != 0 {
+		t.Fatalf("valid roadmap rejected: %v", issues)
+	}
+}
+
+func TestValidateRoadmapIssueMatrix(t *testing.T) {
+	cases := []struct {
+		name string
+		p    WarpPlan
+		want string // substring of the expected issue message
+	}{
+		{"missing ref", phasesPlan(Phase{Title: "P", Description: "d"}), "phase.ref is required"},
+		{"reserved ref", phasesPlan(Phase{Ref: EpicKey, Title: "P", Description: "d"}), "reserved"},
+		{"bad chars", phasesPlan(Phase{Ref: "p 1", Title: "P", Description: "d"}), "invalid characters"},
+		{"dup ref", phasesPlan(
+			Phase{Ref: "p1", Title: "A", Description: "d"},
+			Phase{Ref: "p1", Title: "B", Description: "d"}), "duplicate phase.ref"},
+		{"missing title", phasesPlan(Phase{Ref: "p1", Description: "d"}), "phase.title is required"},
+		{"missing description", phasesPlan(Phase{Ref: "p1", Title: "P"}), "phase.description is required"},
+		{"self need", phasesPlan(Phase{Ref: "p1", Title: "P", Description: "d", Needs: []string{"p1"}}), "references itself"},
+		{"unknown need", phasesPlan(Phase{Ref: "p1", Title: "P", Description: "d", Needs: []string{"nope"}}), "unknown ref"},
+		{"reserved need", phasesPlan(Phase{Ref: "p1", Title: "P", Description: "d", Needs: []string{EpicKey}}), "reserved"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := Validate(tc.p)
+			found := false
+			for _, is := range issues {
+				if strings.Contains(is.Message, tc.want) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("want issue containing %q, got %v", tc.want, issues)
+			}
+		})
+	}
+}
+
+func TestValidateNoPhasesKeepsPickRules(t *testing.T) {
+	// phases absent + picks absent => the existing "at least one pick" issue.
+	issues := Validate(WarpPlan{Epic: Epic{Title: "E"}})
+	found := false
+	for _, is := range issues {
+		if strings.Contains(is.Message, "at least one pick") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("pick-plan rules must be unchanged when phases absent: %v", issues)
 	}
 }
 

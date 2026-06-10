@@ -25,6 +25,8 @@ type ReplanExpect struct {
 // its weft-ref label. The json tags match the `bd list --json` output keys so
 // callers can unmarshal directly into []ReadbackBead.
 type ReadbackBead struct {
+	// ID is the bead id, for post-import edge wiring; ignored by VerifyReplan.
+	ID          string   `json:"id"`
 	Title       string   `json:"title"`
 	Priority    int      `json:"priority"`
 	Labels      []string `json:"labels"`
