@@ -48,23 +48,51 @@ type graphPlan struct {
 	Edges []graphEdge `json:"edges"`
 }
 
+// foldAcceptance appends an "## Acceptance" section to a description when
+// acceptance text is present (the graph node schema's acceptance field is
+// unconfirmed — §8 posture — so it must never be a separate field).
+func foldAcceptance(desc, acceptance string) string {
+	if acceptance == "" {
+		return desc
+	}
+	return strings.TrimRight(desc, "\n") + "\n\n## Acceptance\n" + acceptance
+}
+
 // GraphJSON builds the bd create --graph payload for a first emit (spec §6).
 // The epic becomes an epic node; each pick a task node parented to it, carrying
 // its weft-ref:<ref> identity label plus any authored labels.
+// For roadmap plans (phases present), phase sub-epics replace pick task nodes,
+// and inter-phase needs become blocks edges.
 func GraphJSON(p WarpPlan, d Derivation) ([]byte, error) {
-	desc := p.Epic.Description
-	if p.Epic.Acceptance != "" {
-		// The graph node schema's acceptance field is unconfirmed (§8); fold it
-		// into the description so it is never silently dropped.
-		desc = strings.TrimRight(desc, "\n") + "\n\n## Acceptance\n" + p.Epic.Acceptance
-	}
 	nodes := []graphNode{{
 		Key:         EpicKey,
 		Title:       p.Epic.Title,
-		Description: desc,
+		Description: foldAcceptance(p.Epic.Description, p.Epic.Acceptance),
 		Type:        "epic",
 		Priority:    DefaultPriority,
 	}}
+	if len(p.Phases) > 0 {
+		phases := sortedPhases(p.Phases)
+		for _, ph := range phases {
+			nodes = append(nodes, graphNode{
+				Key:         ph.Ref,
+				Title:       ph.Title,
+				Description: foldAcceptance(ph.Description, ph.Acceptance),
+				Type:        "epic",
+				ParentKey:   EpicKey,
+				Labels:      []string{RefLabelPrefix + ph.Ref},
+				Priority:    DefaultPriority,
+			})
+		}
+		edges := []graphEdge{}
+		for _, ph := range phases {
+			for _, n := range ph.Needs {
+				edges = append(edges, graphEdge{FromKey: ph.Ref, ToKey: n, Type: EdgeType})
+			}
+		}
+		return json.MarshalIndent(graphPlan{Nodes: nodes, Edges: edges}, "", "  ")
+	}
+	// Pick path — only reached when no phases are present (the roadmap branch above returns).
 	for _, pk := range sortedPicks(p.Picks) {
 		nodes = append(nodes, graphNode{
 			Key:         pk.Ref,
@@ -81,6 +109,25 @@ func GraphJSON(p WarpPlan, d Derivation) ([]byte, error) {
 		edges = append(edges, graphEdge{FromKey: e.From, ToKey: e.To, Type: EdgeType})
 	}
 	return json.MarshalIndent(graphPlan{Nodes: nodes, Edges: edges}, "", "  ")
+}
+
+func sortedPhases(phases []Phase) []Phase {
+	out := append([]Phase{}, phases...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Ref < out[j].Ref })
+	return out
+}
+
+// RoadmapCounts returns the node/edge counts a roadmap plan's graph payload
+// carries: 1 (project epic) + len(phases) nodes and the total authored needs edges.
+// Used for the seam-9 preflight comparison. Phase edges come from authored
+// needs inside GraphJSON — NOT from Derive — so callers must not use
+// Derivation.Edges on the roadmap path (it is always empty there).
+func RoadmapCounts(p WarpPlan) (nodes, edges int) {
+	nodes = 1 + len(p.Phases)
+	for _, ph := range p.Phases {
+		edges += len(ph.Needs)
+	}
+	return nodes, edges
 }
 
 // labelsFor returns a pick's emitted labels: the weft-ref identity label first,

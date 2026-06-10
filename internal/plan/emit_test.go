@@ -361,6 +361,94 @@ func TestGraphJSONEmitsOnlyKnownFields(t *testing.T) {
 	}
 }
 
+func TestGraphJSONRoadmap(t *testing.T) {
+	p := WarpPlan{
+		Epic: Epic{Title: "Proj", Description: "proj desc", Acceptance: "proj AC"},
+		Phases: []Phase{
+			{Ref: "p2", Title: "Phase 2", Description: "second", Needs: []string{"p1"}},
+			{Ref: "p1", Title: "Phase 1", Description: "first", Acceptance: "phase AC"},
+		},
+	}
+	b, err := GraphJSON(p, Derivation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		Nodes []struct {
+			Key       string   `json:"key"`
+			Type      string   `json:"type"`
+			ParentKey string   `json:"parent_key"`
+			Labels    []string `json:"labels"`
+			Desc      string   `json:"description"`
+		} `json:"nodes"`
+		Edges []struct {
+			FromKey string `json:"from_key"`
+			ToKey   string `json:"to_key"`
+			Type    string `json:"type"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal(b, &g); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Nodes) != 3 {
+		t.Fatalf("want 3 nodes (epic + 2 phases), got %d", len(g.Nodes))
+	}
+	// Nodes: epic first, then phases sorted by ref (p1 before p2).
+	if g.Nodes[0].Key != EpicKey || g.Nodes[0].Type != "epic" {
+		t.Fatalf("node 0 must be the project epic: %+v", g.Nodes[0])
+	}
+	p1 := g.Nodes[1]
+	if p1.Key != "p1" || p1.Type != "epic" || p1.ParentKey != EpicKey {
+		t.Fatalf("phase node shape wrong: %+v", p1)
+	}
+	// Phase has no Labels field — only the weft-ref identity label is emitted.
+	if len(p1.Labels) != 1 || p1.Labels[0] != "weft-ref:p1" {
+		t.Fatalf("phase node must carry exactly the weft-ref label: %v", p1.Labels)
+	}
+	if !strings.Contains(p1.Desc, "## Acceptance\nphase AC") {
+		t.Fatalf("phase acceptance must fold into description: %q", p1.Desc)
+	}
+	if len(g.Edges) != 1 || g.Edges[0].FromKey != "p2" || g.Edges[0].ToKey != "p1" || g.Edges[0].Type != "blocks" {
+		t.Fatalf("want single p2->p1 blocks edge, got %v", g.Edges)
+	}
+}
+
+func TestGraphJSONPickPathUnchangedByPhases(t *testing.T) {
+	// A pick plan must have the correct structural shape (epic node + task node)
+	// when no phases are present; byte-identical determinism is covered by
+	// TestGraphJSONIsDeterministic.
+	p := WarpPlan{
+		Epic:  Epic{Title: "E", Description: "d"},
+		Picks: []Pick{{Ref: "a", Title: "A", Description: "a"}},
+	}
+	b, err := GraphJSON(p, Derivation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		Nodes []struct {
+			Key  string `json:"key"`
+			Type string `json:"type"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(b, &g); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Nodes) != 2 || g.Nodes[1].Type != "task" {
+		t.Fatalf("pick path regressed: %+v", g.Nodes)
+	}
+}
+
+func TestRoadmapCounts(t *testing.T) {
+	p := WarpPlan{Phases: []Phase{
+		{Ref: "p1"}, {Ref: "p2", Needs: []string{"p1"}}, {Ref: "p3", Needs: []string{"p1", "p2"}},
+	}}
+	nodes, edges := RoadmapCounts(p)
+	if nodes != 4 || edges != 3 {
+		t.Fatalf("want nodes=4 edges=3, got %d/%d", nodes, edges)
+	}
+}
+
 // TestBuildReplanIsDeterministic verifies that BuildReplan produces
 // byte-identical JSONL regardless of input pick order.
 func TestBuildReplanIsDeterministic(t *testing.T) {
