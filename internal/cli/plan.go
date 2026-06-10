@@ -66,6 +66,8 @@ func (a *App) newPlanEmitCmd() *cobra.Command {
 // gated by a bd-backed dry-run preflight that refuses to silently drop fields
 // (seam 9 / docs/seams/09-emit-field-drop-guard.md).
 func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, dryRun, allowDrop bool) error {
+	isRoadmap := len(wp.Phases) > 0
+
 	graph, err := plan.GraphJSON(wp, d)
 	if err != nil {
 		return err
@@ -89,7 +91,13 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if err != nil {
 		return exit.Hardf("%v", err)
 	}
-	issues := plan.CheckPreflight(pf, 1+len(wp.Picks), len(d.Edges))
+	wantNodes, wantEdges := 1+len(wp.Picks), len(d.Edges)
+	if isRoadmap {
+		// Roadmap path: phase edges come from authored needs inside GraphJSON,
+		// not from Derive — d.Edges is always empty here and must not be used.
+		wantNodes, wantEdges = plan.RoadmapCounts(wp)
+	}
+	issues := plan.CheckPreflight(pf, wantNodes, wantEdges)
 
 	warnings := []string{}
 	if issues.CountMismatch != "" {
@@ -110,8 +118,13 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if dryRun {
 		data := map[string]any{
 			"dry_run": true, "mode": "create", "epic": wp.Epic.Title,
-			"picks": len(wp.Picks), "edges": d.Edges, "tolerated": d.Tolerated,
+			"edges": d.Edges, "tolerated": d.Tolerated,
 			"schema_version": pf.SchemaVersion, "warnings": warnings,
+		}
+		if isRoadmap {
+			data["phases"] = len(wp.Phases)
+		} else {
+			data["picks"] = len(wp.Picks)
 		}
 		return Emit(cmd, "plan.emit", data, planPreviewText("create", wp, d))
 	}
@@ -127,13 +140,26 @@ func (a *App) planFirstEmit(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivat
 	if s := strings.TrimSpace(res.Stderr); s != "" {
 		warnings = append(warnings, s)
 	}
+	created := len(wp.Picks)
+	if isRoadmap {
+		created = len(wp.Phases)
+	}
 	data := map[string]any{
-		"mode": "create", "created": len(wp.Picks), "edges": d.Edges,
+		"mode": "create", "created": created, "edges": d.Edges,
 		"tolerated": d.Tolerated, "schema_version": pf.SchemaVersion,
 		"warnings": warnings, "bd_output": strings.TrimSpace(res.Stdout),
 	}
-	text := fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\n%s",
-		len(wp.Picks), len(d.Edges), len(d.Tolerated), strings.TrimSpace(res.Stdout))
+	if isRoadmap {
+		data["phases"] = len(wp.Phases)
+	}
+	var text string
+	if isRoadmap {
+		text = fmt.Sprintf("emitted roadmap: %d phase(s)\n%s",
+			len(wp.Phases), strings.TrimSpace(res.Stdout))
+	} else {
+		text = fmt.Sprintf("emitted warp: %d pick(s), %d edge(s), %d tolerated overlap(s)\n%s",
+			len(wp.Picks), len(d.Edges), len(d.Tolerated), strings.TrimSpace(res.Stdout))
+	}
 	return Emit(cmd, "plan.emit", data, text)
 }
 
@@ -169,7 +195,12 @@ func writeTempPayload(pattern string, payload []byte) (string, func(), error) {
 // warn+tolerate overlaps the human is approving.
 func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "DRY RUN (%s) — epic %q, %d pick(s), %d edge(s)\n", mode, wp.Epic.Title, len(wp.Picks), len(d.Edges))
+	if len(wp.Phases) > 0 {
+		fmt.Fprintf(&b, "DRY RUN (%s) — epic %q, %d phase(s) (roadmap)\n", mode, wp.Epic.Title, len(wp.Phases))
+	} else {
+		fmt.Fprintf(&b, "DRY RUN (%s) — epic %q, %d pick(s), %d edge(s)\n", mode, wp.Epic.Title, len(wp.Picks), len(d.Edges))
+	}
+	// d.Edges is empty on the roadmap path; this loop is a no-op there.
 	for _, e := range d.Edges {
 		fmt.Fprintf(&b, "  edge: %s depends on %s\n", e.From, e.To)
 	}
@@ -344,6 +375,9 @@ func (a *App) newPlanCheckCmd() *cobra.Command {
 			issues := plan.Validate(wp)
 			data := map[string]any{"valid": len(issues) == 0, "issues": issues}
 			text := fmt.Sprintf("valid: %d pick(s), no issues", len(wp.Picks))
+			if len(wp.Phases) > 0 {
+				text = fmt.Sprintf("valid: %d phase(s), no issues", len(wp.Phases))
+			}
 			if len(issues) > 0 {
 				var b strings.Builder
 				fmt.Fprintf(&b, "INVALID: %d issue(s)", len(issues))

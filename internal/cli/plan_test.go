@@ -624,6 +624,84 @@ func TestPlanReplanReadbackHappyPath(t *testing.T) {
 	}
 }
 
+const roadmapPlanJSON = `{"epic":{"title":"Proj","description":"d"},"phases":[` +
+	`{"ref":"p1","title":"Phase 1","description":"first"},` +
+	`{"ref":"p2","title":"Phase 2","description":"second","needs":["p1"]}]}`
+
+func TestPlanCheckRoadmapText(t *testing.T) {
+	file := writePlanFile(t, roadmapPlanJSON)
+	r := &routeRunner{fn: func(_ string, _ []string) run.Result { return run.Result{} }}
+	out, err := newTestCmd(r, "plan", "check", file)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "valid: 2 phase(s)") {
+		t.Errorf("roadmap check text must count phases, got %q", out.String())
+	}
+	if strings.Contains(out.String(), "0 pick(s)") {
+		t.Errorf("roadmap check text must not mention picks: %q", out.String())
+	}
+}
+
+func TestPlanEmitRoadmapDryRunCountsAndEnvelope(t *testing.T) {
+	// Roadmap: nodes = epic+2 phases = 3; edges = 1 (p2 needs p1).
+	// d.Edges is empty on this path — the counts MUST come from RoadmapCounts.
+	file := writePlanFile(t, roadmapPlanJSON)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return dryRunOK(3, 1)
+		}
+		return run.Result{}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("roadmap dry-run must pass the preflight count check: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `"phases": 2`) {
+		t.Errorf("roadmap envelope must carry phases count: %q", s)
+	}
+	if strings.Contains(s, `"picks"`) {
+		t.Errorf("picks key must be ABSENT on the roadmap path (not zero): %q", s)
+	}
+}
+
+func TestPlanEmitRoadmapCountMismatchIsHard(t *testing.T) {
+	// bd reporting pick-plan-shaped counts (1 node, 0 edges) for a roadmap must
+	// hard-fail — this is the exact bug the design review caught.
+	file := writePlanFile(t, roadmapPlanJSON)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return dryRunOK(1, 0)
+		}
+		return run.Result{}
+	}}
+	if got := exit.Code(runRoot(r, "plan", "emit", file, "--dry-run")); got != 2 {
+		t.Fatalf("count mismatch must exit 2, got %d", got)
+	}
+}
+
+func TestPlanEmitRoadmapLiveEnvelope(t *testing.T) {
+	file := writePlanFile(t, roadmapPlanJSON)
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		if strings.Contains(strings.Join(args, " "), "--dry-run") {
+			return dryRunOK(3, 1)
+		}
+		return run.Result{Stdout: "created", Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `"phases": 2`) || !strings.Contains(s, `"created": 2`) {
+		t.Errorf("live roadmap envelope must carry phases+created counts: %q", s)
+	}
+	if strings.Contains(s, `"picks"`) {
+		t.Errorf("picks key must be absent on the live roadmap path: %q", s)
+	}
+}
+
 // TestPlanReplanReadbackMalformedJSONIsHard covers the warpReadback json.Unmarshal
 // error branch: the pre-import list call returns valid JSON (so ref resolution and
 // replan build succeed), bd import succeeds, but the post-import list call (the
