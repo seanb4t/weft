@@ -25,11 +25,13 @@ Before any questioning, check whether this is actually a new project. If the rep
 already weft-managed — `.beads/` is present and `bd list --json` returns a non-empty warp
 — and the request is **incremental work against the existing code** ("add X", "change Y",
 "fix Z") rather than building a new project, do **not** run the full greenfield flow.
-Point the user to `/weft-feature` (the lightweight front door: brief Q&A, no research
+Point the user to the `feature` skill (the lightweight front door: brief Q&A, no research
 fan-out, one epic + picks against existing code, in minutes) and stop.
 
 Proceed into Phase 1 only for genuine greenfield work — a brand-new project or a new
 milestone in an empty/unmanaged tree.
+
+---
 
 ## Phase 1 — Adaptive questioning
 

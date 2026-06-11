@@ -32,9 +32,11 @@ bd list --json
 ```
 
 The repo is weft-managed when `.beads/` is present **and** `bd list --json` returns a
-non-empty warp (at least one existing epic/issue). If `.beads/` is absent or the warp is
-empty, stop and tell the user this repo is not weft-managed yet — point them to
-`onboard` (to make it weft-ready) or `new-project` (for a greenfield build) — and exit.
+non-empty warp (at least one existing epic/issue). If `.beads/` is absent, the repo is
+not weft-managed yet — point the user to `onboard` (to make it weft-ready) and exit. If
+`.beads/` is present but the warp is empty, the repo is weft-ready but has nothing to
+build incremental work on — point the user to `new-project` (for a greenfield build) and
+exit.
 
 ---
 
@@ -151,7 +153,8 @@ feature's first ready picks.
 
 ## What this workflow does NOT do
 
-- It does not onboard an unmanaged repo — that is `onboard`; `feature` only routes to it.
+- It does not onboard an unmanaged repo or plan a greenfield build — those are `onboard`
+  and `new-project`; `feature` only routes to them.
 - It does not run ecosystem research (new-project's 4-agent fan-out) — out of scope.
 - It does not discover phases or emit a roadmap — `feature` is always single-epic.
 - It does not execute or verify picks — that is `execute` and `verify-work`.
