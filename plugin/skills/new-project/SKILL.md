@@ -19,6 +19,20 @@ validates it, and gates on human approval before materialising the warp.
 
 ---
 
+## Phase 0 — Route incremental work to feature
+
+Before any questioning, check whether this is actually a new project. If the repo is
+already weft-managed — `.beads/` is present and `bd list --json` returns a non-empty warp
+— and the request is **incremental work against the existing code** ("add X", "change Y",
+"fix Z") rather than building a new project, do **not** run the full greenfield flow.
+Point the user to the `feature` skill (the lightweight front door: brief Q&A, no research
+fan-out, one epic + picks against existing code, in minutes) and stop.
+
+Proceed into Phase 1 only for genuine greenfield work — a brand-new project or a new
+milestone in an empty/unmanaged tree.
+
+---
+
 ## Phase 1 — Adaptive questioning
 
 **Goal:** fully understand project scope, goals, constraints, and technical
