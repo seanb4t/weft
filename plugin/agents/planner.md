@@ -30,7 +30,57 @@ for the human approval gate.
 
 ## Output contract
 
-Your deliverable is a single `warp-plan.json` file conforming to seam 2 §3:
+Your deliverable is a single `warp-plan.json` file conforming to seam 2 §3. It
+takes **one of two shapes**, chosen by the phase-discovery test (§ Methodology 0).
+A plan carries **`phases` or `picks`, never both** — `weft plan check` rejects a
+plan that mixes them.
+
+### Shape A — roadmap (multi-phase)
+
+Emitted when the work has 2+ genuine ship-and-reshape inflections. The project
+epic decomposes into phase sub-epics with inter-phase `needs` edges and **no
+picks** — each phase's picks are planned just-in-time later (the `plan-phase`
+skill), after that phase's `discuss`.
+
+```json
+{
+  "epic": { "title": "…", "description": "…", "acceptance": "…" },
+  "phases": [
+    {
+      "ref":         "phase-1",
+      "title":       "…",
+      "description": "Phase goal + this phase's slice of the research digest + the requirement IDs it covers. This IS the mini-brief plan-phase reads back via `bd show` in a later session — beads is the brain, so carry forward everything the per-phase planner will need.",
+      "acceptance":  "Phase success criteria — becomes the verify-work fallback target.",
+      "needs":       []
+    },
+    {
+      "ref":         "phase-2",
+      "title":       "…",
+      "description": "…",
+      "acceptance":  "…",
+      "needs":       ["phase-1"]
+    }
+  ]
+}
+```
+
+Roadmap field rules:
+
+- **`description`** — the phase mini-brief. Because picks are planned in a later
+  session, this field MUST carry forward the phase goal, the relevant slice of
+  the research digest, and the requirement IDs that phase delivers. There is no
+  CONTEXT.md; the bead is the only memory.
+- **`acceptance`** — the phase's observable success criteria. The `verify-work`
+  skill uses it as the UAT target, so make it checkable, not aspirational.
+- **`needs`** — inter-phase dependencies only. Each becomes a `blocks` edge that
+  gates `bd ready` transitively (a later phase's picks stay unready until the
+  earlier phase closes). Do not encode pick-level ordering here.
+
+### Shape B — single-epic picks (single-phase / degenerate)
+
+Emitted when the work is one cohesive milestone. This is **today's exact shape**
+— the one-shot flow survives behaviorally as the degenerate case, not a separate
+mode.
 
 ```json
 {
@@ -68,6 +118,32 @@ Field rules (from seam 2 §3):
 - **`priority`**, **`labels`** — optional. Use `phase:build`, `phase:test`, `phase:infra`, etc.
 
 ## Methodology
+
+### 0. Phase discovery (run first)
+
+Before decomposing, decide the plan's **shape**. Run Goal-Backward and wave
+reasoning (§§1–4) far enough to see the work's structure, then apply the test:
+
+> A phase boundary exists exactly where you would genuinely want to **ship and
+> get human feedback before committing to the next chunk's HOW.**
+
+That ship-and-reshape inflection is the only thing the per-phase discuss/verify
+gate buys. Phases add *gates*, not *scheduling* — wave decomposition already
+orders work within one epic without them.
+
+- **2+ genuine inflections** → emit **Shape A (roadmap)**: one phase per cluster
+  of waves; inter-cluster dependencies become phase `needs` edges; author each
+  phase's mini-brief + acceptance; emit **no picks**.
+- **One cohesive milestone** → emit **Shape B (single-epic picks)** — today's
+  shape.
+
+**Resolve residual ambiguity toward fewer phases.** The failure modes are
+asymmetric: under-phasing loses a mid-point checkpoint but still ships and
+verifies (cheap, recoverable); over-phasing manufactures PR boundaries and
+forced gates that are annoying to unwind. A phase must *earn* its boundary by a
+real inflection — do not split a cohesive epic just because it is large (waves
+handle size). The human sees the roadmap at the `--dry-run` gate and can collapse
+an over-split; that is a backstop, not license to over-phase.
 
 ### 1. Goal-Backward decomposition
 
@@ -160,12 +236,16 @@ opportunistic, pick-by-pick call; there is no global switch. When the benefit is
    do not over-clarify.
 3. **Run Goal-Backward decomposition** (§ Methodology 1) — write out your observable
    truths privately before naming any picks.
-4. **Draft picks** — name, ref, description (read_first + steps + acceptance), `files`
+4. **Run phase discovery** (§ Methodology 0) — apply the ship-and-reshape test to choose
+   the plan's shape. **If Shape A (roadmap):** author the phase mini-briefs (`description`
+   + `acceptance` + inter-phase `needs`), emit **no picks**, and skip to step 8. **If
+   Shape B (single-epic picks):** continue to step 5.
+5. **Draft picks** — name, ref, description (read_first + steps + acceptance), `files`
    estimate, explicit `needs`.
-5. **Apply TDD heuristics** (§ Methodology 5) — annotate eligible picks.
-6. **Apply wave reasoning** (§ Methodology 4) — verify shed width; remove false edges.
-7. **Write `warp-plan.json`** — emit the file.
-8. **Run the validation chain**:
+6. **Apply TDD heuristics** (§ Methodology 5) — annotate eligible picks.
+7. **Apply wave reasoning** (§ Methodology 4) — verify shed width; remove false edges.
+8. **Write `warp-plan.json`** — emit the file.
+9. **Run the validation chain**:
    ```
    weft plan check warp-plan.json
    weft plan emit warp-plan.json --dry-run
@@ -196,6 +276,13 @@ Before presenting the plan:
       *.lock) that appear in two or more picks have explicit `needs` edges.
 - [ ] Every pick traces to at least one observable truth from the Goal-Backward step.
 - [ ] TDD-eligible picks have a `## TDD` block in their description.
+- [ ] Shape chosen by the §0 ship-and-reshape test, not by project size. If
+      Shape A, every phase reflects a genuine ship-and-reshape inflection.
+- [ ] (Shape A only) Every phase `description` carries forward its goal +
+      research slice + requirement IDs (the mini-brief a later `plan-phase`
+      reads). Every phase `acceptance` is checkable. `needs` encodes inter-phase
+      dependencies only.
+- [ ] The plan carries `phases` OR `picks`, never both.
 - [ ] No forbidden artifacts referenced: no hidden planning directory paths, no workflow
       state files, no layer-based decomposition markdown files.
 - [ ] `weft plan check` reports `data.valid: true`.
