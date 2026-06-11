@@ -107,6 +107,13 @@ Goal-Backward decomposition, vertical-slice bias, file-ownership dependency
 reasoning, wave thinking, and TDD-mode heuristics per its own methodology
 (see `${CLAUDE_PLUGIN_ROOT}/agents/planner.md`).
 
+The agent applies phase discovery (planner §0) and returns **one of two shapes**:
+a **roadmap** (`phases[]`, no picks) for genuinely multi-phase work, or a
+**single-epic pick plan** (`picks[]`) for one cohesive milestone. Both shapes
+flow through Phases 5–6 unchanged — `weft plan check` and `weft plan emit
+--dry-run` validate and preview either shape. Do not ask the planner to "pick a
+mode"; the shape is a property of the work it discovered.
+
 ---
 
 ## Phase 5 — Validate: weft plan check
@@ -164,9 +171,20 @@ This materialises the warp atomically — the epic, all picks as beads, and
 all dependency edges are created in beads. Beads is now the source of truth.
 `warp-plan.json` is a transient artifact; it may be discarded or archived.
 
-Confirm to the user that the warp is live and that `bd ready` will list the
-first set of ready picks (a shed is woven from them with `weft shed form` when
-execution begins).
+The `weft plan emit` success envelope echoes `data.ids` (`{node-key →
+bead-id}`) — read the project-epic id and any phase-sub-epic ids straight from
+it; do not query bd to rediscover them. The closing message **diverges on the
+emitted shape**:
+
+- **Single-epic pick plan:** confirm the warp is live and that `bd ready` lists
+  the first ready picks (a shed is woven with `weft shed form` when execution
+  begins). End with: **"warp emitted — run `execute`."** (today's flow).
+- **Roadmap:** confirm the project epic + phase sub-epics + inter-phase edges
+  are live, and that `bd ready` currently surfaces only phase-1-eligible work
+  (later phases are gated by their inter-phase `blocks` edges until earlier
+  phases close). End with: **"roadmap emitted — run `discuss` on phase 1
+  (`<phase-1 id from data.ids>`), then `plan-phase` on it."** This is the
+  deliberately-more-interactive default the phased loop exists for.
 
 ---
 
