@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/seanb4t/weft/compare/v0.1.1...v0.2.0) (2026-06-12)
+
+
+### Features
+
+* **weft-ccy.3:** phased planner — discovery, two-shape output, JIT plan-phase ([#53](https://github.com/seanb4t/weft/issues/53)) ([3584604](https://github.com/seanb4t/weft/commit/3584604315a837d440da8481bfe336c962288b0b))
+* **weft-ccy.4:** explore + spike skills — upstream ideation + feasibility ([#63](https://github.com/seanb4t/weft/issues/63)) ([4992950](https://github.com/seanb4t/weft/commit/4992950f68c061d93895ca1ba3a0ea07aadf2328))
+* **weft-ccy.5:** phased-emission engine enablers — phases[], ids echo, applied edges ([#50](https://github.com/seanb4t/weft/issues/50)) ([90f0617](https://github.com/seanb4t/weft/commit/90f0617bf748e384fd4b788b79078d0733c1da70))
+* **weft-ccy.6:** feature skill — lightweight incremental-work front door ([#56](https://github.com/seanb4t/weft/issues/56)) ([a9173e7](https://github.com/seanb4t/weft/commit/a9173e7004373698e19e75519bb9a22e6f92fc7f))
+* **weft-ccy.7:** onboard skill + feature precondition fix (close routing triad) ([#58](https://github.com/seanb4t/weft/issues/58)) ([df3f6bc](https://github.com/seanb4t/weft/commit/df3f6bc45685754570fe7481cc6d07bf971f012a))
+* **weft-ccy.8:** phase-driver skill — thin interactive outer loop over the per-phase rhythm ([#61](https://github.com/seanb4t/weft/issues/61)) ([6846501](https://github.com/seanb4t/weft/commit/68465010089a444a4797c3eb551a770feb477a36))
+* **weft-ccy:** phase A — discuss + verify-work interactive gate skills ([#47](https://github.com/seanb4t/weft/issues/47)) ([119846b](https://github.com/seanb4t/weft/commit/119846b7c16759b614453be2a61161a62966cc0d))
+
+
+### Miscellaneous Chores
+
+* release 0.2.0 ([#65](https://github.com/seanb4t/weft/issues/65)) ([3ebc35e](https://github.com/seanb4t/weft/commit/3ebc35e25745747d3fe382494e869c4d2e486524))
+
 ## [0.1.1](https://github.com/seanb4t/weft/compare/v0.1.0...v0.1.1) (2026-06-09)
 
 
