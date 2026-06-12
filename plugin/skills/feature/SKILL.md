@@ -25,18 +25,18 @@ roadmap). Use `onboard` to make an unmanaged repo weft-ready first.
 
 ## Phase 0 — Precondition
 
-Confirm the repo is weft-managed before doing anything else:
+Check for `.beads/` to confirm the repo is weft-managed:
 
 ```
-bd list --json
+test -d .beads && echo managed || echo unmanaged
 ```
 
-The repo is weft-managed when `.beads/` is present **and** `bd list --json` returns a
-non-empty warp (at least one existing epic/issue). If `.beads/` is absent, the repo is
-not weft-managed yet — point the user to `onboard` (to make it weft-ready) and exit. If
-`.beads/` is present but the warp is empty, the repo is weft-ready but has nothing to
-build incremental work on — point the user to `new-project` (for a greenfield build) and
-exit.
+The repo is weft-managed when `.beads/` is present. If `.beads/` is absent, the repo is
+not weft-managed yet — point the user to `onboard` (to make it weft-ready) and exit.
+Otherwise proceed: `feature` does incremental work on the existing **code**, so an
+initialised repo qualifies even when its warp is empty (a freshly-onboarded repo) —
+`feature` mints its own epic below. (For a greenfield build with no existing code to
+extend, the user can choose `new-project` directly.)
 
 ---
 
