@@ -34,7 +34,7 @@ now complete.
 | Decision | Choice |
 |---|---|
 | Scope | `explore` + `spike` now; `sketch` (+ ui-phase question) → follow-up bead with its own design |
-| explore outputs | Forward ideas → **seed beads** (`bd create --type task --labels seed` then `bd defer <id>` — `bd create` has no `--status` flag; trigger in description); durable context/decisions → **`bd remember`**. No holder epic, no `.planning/` files. |
+| explore outputs | Forward ideas → **seed beads** (`bd create --type task --labels seed --title …` then `bd defer <id>` — `bd create` requires `--title` and has no `--status` flag; trigger in description); durable context/decisions → **`bd remember`**. No holder epic, no `.planning/` files. |
 | spike code lifecycle | Each experiment in a **throwaway `jj new main` change**, run, record verdict, then **`jj abandon`**. The verdict is the durable artifact, not the code. |
 | spike outputs | A **spike bead** (`--label spike`, G/W/T + verdict + evidence, closed when done); validated finding → **`bd remember`** (consumed by discuss/plan-phase, weft's analog of GSD wrap-up→skill). |
 | Coupling | **Standalone doors, soft handoffs.** No skill hard-invokes another. explore *suggests* spike; spike's `bd remember` is *automatically* read by discuss/plan-phase. |
@@ -60,9 +60,9 @@ or epic. weft's analog of `/gsd-explore`, rewritten to bead-backed state.
    digest in context.
 3. **Route outputs to beads.** After the conversation, propose and persist:
    - **Forward-looking actionable ideas → seed beads:**
-     `bd create --type task --labels seed --description "<idea + trigger conditions>"`
-     then `bd defer <id>` (`bd create` has no `--status` flag — deferral is the
-     second step). They live in the warp backlog as schedulable work-in-waiting;
+     `bd create --type task --labels seed --title "<short idea>" --description "<idea + trigger conditions>"`
+     then `bd defer <id>` (`bd create` requires `--title` and has no `--status`
+     flag — deferral is the second step). They live in the warp backlog as schedulable work-in-waiting;
      a seed is promoted/planned when its trigger fires.
    - **Durable context / decisions → `bd remember`** (project-global, surfaced
      by the `bd prime` hook every future session; no epic needed).

@@ -23,7 +23,7 @@
 
 - **Files touched:** `plugin/skills/explore/SKILL.md` and `plugin/skills/spike/SKILL.md` are the two new-creates. Parent `plugin/skills/` exists; siblings `discuss/`, `execute/`, `feature/`, `new-project/`, `onboard/`, `phase-driver/`, `plan-phase/`, `verify-work/`. **Skill-only** — no `weft/commands/` + `weft/workflows/` pair (ADR `weft-88z`, matching the newest skills).
 - **Skills auto-discovered** — `plugin/.claude-plugin/plugin.json` does not enumerate skills; creating the `SKILL.md` files registers them. (README skill index maintenance is decoupled — the newest skills are absent from it — so this plan does not touch `plugin/README.md`.)
-- **bd flags (verified live):** `bd create` has **no `--status` flag** — deferral is two-step: `bd create --type task --labels seed --description "…" --json` (flat top-level `.id`) then **`bd defer <id>`**. `bd defer`/`bd undefer` exist; `bd ready` returns only `status=open`, so deferred seeds are correctly excluded from the ready set. `bd create` confirmed flags: `--type {task,chore,…}`, `--labels` (comma-sep), `--parent`, `--description`/`--stdin`, `--json`. `bd remember "…" --key <key>` confirmed (memories surfaced by the `bd prime` hook at session start). `bd close <id> --reason`, `bd note <id> --stdin` confirmed.
+- **bd flags (verified live):** `bd create` has **no `--status` flag** — deferral is two-step: `bd create --type task --labels seed --description "…" --json` (flat top-level `.id`) then **`bd defer <id>`**. `bd defer`/`bd undefer` exist; `bd ready` returns only `status=open`, so deferred seeds are correctly excluded from the ready set. `bd create` confirmed flags: `--title` (**required**), `--type {task,chore,…}`, `--labels` (comma-sep), `--parent`, `--description`/`--stdin`, `--json`. `bd remember "…" --key <key>` confirmed (memories surfaced by the `bd prime` hook at session start). `bd close <id> --reason`, `bd note <id> --stdin` confirmed.
 - **jj throwaway lifecycle:** the working copy is always a commit and auto-snapshotted, so `jj new main` preserves the user's in-flight `@` as a commit; `jj abandon @` discards only the experiment; `jj edit <saved-change-id>` returns the user to where they started. All jj invocations pass `--no-pager` per the `jj-agent-safety` profile.
 - **`Explore` subagent** is the existing Task-tool agent `feature`/`onboard` use for recon — distinct namespace from this `explore` *skill*; `explore` MAY dispatch it for the research pass.
 - **No automated unit tests apply** — markdown prompts. Per-task gate is the CI discipline run locally: `claude plugin validate ./plugin --strict`, `claude plugin validate . --strict`, and `grep -RnE 'weft/(agents|references|workflows)/' plugin/` returning no matches.
@@ -113,12 +113,14 @@ Propose the outputs to the user, then persist the agreed ones:
 
   ```
   ID=$(bd create --type task --labels seed \
+        --title "<short idea title>" \
         --description "<idea>. Trigger: <when this should be picked up>." \
         --json | jq -r .id)
   bd defer "$ID"
   ```
 
-  `bd create` has no `--status` flag, so defer is the second step; `bd defer`
+  `bd create` requires `--title` and has no `--status` flag, so defer is the
+  second step; `bd defer`
   moves the seed out of `bd ready` until it is undeferred/promoted. Seeds live in
   the warp backlog as schedulable work-in-waiting.
 
@@ -278,10 +280,8 @@ Record one **`spike` bead** capturing the question, every Given/When/Then, each
 verdict, and the evidence:
 
 ```
-ID=$(printf '%s' "Spike: <question>
-
-<for each experiment: the Given/When/Then + VERDICT + evidence>" \
-  | bd create --type chore --labels spike --stdin --json | jq -r .id)
+ID=$(printf '%s' "<for each experiment: the Given/When/Then + VERDICT + evidence>" \
+  | bd create --type chore --labels spike --title "Spike: <question>" --stdin --json | jq -r .id)
 ```
 
 If invoked with `[epic-id]`, parent the spike bead under it
@@ -412,4 +412,4 @@ Delete the throwaway test beads created during the dogfood (use the ids surfaced
 # bd delete <seed-id> <spike-id>   # remove the dogfood test beads
 bd note weft-ccy.4 "dogfood <date>: explore produced a deferred seed bead (excluded from bd ready) + an explore-* memory; spike ran G/W/T in a throwaway jj change, abandoned it (working copy restored to saved @), left a closed spike bead + spike-* memory; plugin validate strict x2 + grep-discipline clean."
 ```
-<!-- adr-capture: sha256=65ad30c2a568fba2; session=cli; ts=2026-06-12T12:40:06Z; adrs=weft-fwn -->
+<!-- adr-capture: sha256=bf1171285450abd7; session=cli; ts=2026-06-12T13:25:58Z; adrs=weft-fwn -->
