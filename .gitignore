@@ -71,3 +71,8 @@ tmp/
 
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
+
+# Python hook build artifacts (plugin/hooks/)
+__pycache__/
+*.pyc
+.pytest_cache/
