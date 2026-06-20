@@ -44,6 +44,25 @@ was skipped, plan the phase from its mini-brief and acceptance alone.
 
 ---
 
+## Phase 1.5 — UI safety gate (non-blocking)
+
+If this phase looks like **frontend work** — a design system is present in the
+repo (`components.json`, Tailwind config, a frontend framework in
+`package.json`) **or** the mini-brief / existing picks mention UI / frontend /
+component / page / screen — **and** no UI contract exists for it (no `ui-spec`
+`decision` bead related to the phase epic, and no UI contract in the `design`
+field), prompt the human:
+
+> "This phase looks like frontend work but has no locked UI contract. Run
+> `ui-phase <phase-epic-id>` first? (recommended / skip)"
+
+This is a **nudge, not a block** — the human may skip and plan anyway. There is
+no config toggle (weft has no `workflow.*` system); the gate is always evaluated
+but always skippable. On a non-frontend phase, or one that already has a UI
+contract, say nothing and continue.
+
+---
+
 ## Phase 2 — Dispatch weft-planner (picks-only, phase-scoped)
 
 **Goal:** produce a **picks-only** `warp-plan.json` for this phase.
@@ -52,7 +71,10 @@ Dispatch the `weft-planner` agent (model `opus`, per its frontmatter) with:
 
 - the phase mini-brief (`description`) as the spec,
 - the phase `acceptance` as the observable goal to decompose backward from,
-- the locked HOW decisions from the `design` field (if any).
+- the locked HOW decisions from the `design` field (if any),
+- the locked **UI contract** (if any) — the `ui-spec` `decision` bead / `design`-field
+  contract from `ui-phase` — so picks reference the locked spacing tokens, color
+  variables, typography, and copywriting decisions.
 
 Instruct the planner to emit **Shape B (single-epic picks)** — this is one
 phase's cohesive slice, so it is single-phase by construction. The planner's

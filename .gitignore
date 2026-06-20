@@ -54,6 +54,7 @@ tmp/
 
 # Superpowers brainstorming artifacts
 .superpowers/
+.weft/
 
 # Stray beads export in worktree root (belongs under .beads/ only)
 /issues.jsonl
