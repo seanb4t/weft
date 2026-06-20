@@ -58,6 +58,20 @@ jobs:
             exit 1
           fi
 
+  hooks-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # The weft plugin ships a stdlib-only Python SessionStart hook
+      # (plugin/hooks/; python3 shebang, uv-compatible via PEP 723 metadata).
+      # This job is the "session-start smoke check": it runs the hook's unit +
+      # subprocess tests — detection, silence, graceful bd-degradation, and live
+      # warp-status formatting via a hermetic fake `bd` (no real warp needed). uv
+      # here just provisions a throwaway python+pytest env for the test runner.
+      # Pinned for supply-chain safety — bump deliberately; Renovate tracks the SHA.
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - run: uv run --python 3.12 --with pytest python -m pytest plugin/hooks/tests -q
+
   integration:
     runs-on: ubuntu-latest
     steps:
