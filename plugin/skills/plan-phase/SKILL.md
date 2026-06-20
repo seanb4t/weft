@@ -71,7 +71,7 @@ Dispatch the `weft-planner` agent (model `opus`, per its frontmatter) with:
 
 - the phase mini-brief (`description`) as the spec,
 - the phase `acceptance` as the observable goal to decompose backward from,
-- the locked HOW decisions from the `design` field (if any).
+- the locked HOW decisions from the `design` field (if any),
 - the locked **UI contract** (if any) — the `ui-spec` `decision` bead / `design`-field
   contract from `ui-phase` — so picks reference the locked spacing tokens, color
   variables, typography, and copywriting decisions.
