@@ -51,7 +51,9 @@ command -v node >/dev/null || echo "degraded: no node — using static HTML fall
 Launch the server **in the background** (it must survive across turns — use the
 Bash tool's `run_in_background` on platforms that reap detached processes, then
 read `$STATE_DIR/server-info` next turn). Capture `url`, `screen_dir`, and
-`state_dir` from the startup JSON. Tell the user to open the URL. The scratch
+`state_dir` from the startup JSON; the **session dir** `$SESSION_DIR` (the
+argument Phase 5 passes to `stop-server.sh`) is their common parent,
+`$(dirname "$STATE_DIR")`. Tell the user to open the URL. The scratch
 dir lands under the gitignored `.weft/sketch/<session>/` — never committed.
 
 **Degraded (no `node`):** write each variant as a self-contained HTML file under
