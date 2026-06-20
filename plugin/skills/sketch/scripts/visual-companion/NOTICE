@@ -1,0 +1,11 @@
+weft vendors the visual companion server in this directory from
+Superpowers (https://github.com/obra/superpowers), used under the MIT License.
+
+  MIT License — Copyright (c) Jesse Vincent and Superpowers contributors.
+
+The vendored files (server.cjs, start-server.sh, stop-server.sh,
+frame-template.html, helper.js) carry no per-file license headers upstream; the
+MIT License applies to them via the Superpowers repository LICENSE file, and they
+are NOT relicensed. weft itself is Apache-2.0; this directory is the sole MIT
+exception. See UPSTREAM.md for the source commit and the list of weft
+modifications.
