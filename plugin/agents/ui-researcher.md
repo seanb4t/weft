@@ -24,9 +24,10 @@ files, no `UI-SPEC.md`.
 
 - The phase epic's `description` (mini-brief), `acceptance`, and `design` field
   (locked HOW decisions from `discuss`).
-- Any **sketch finding** (`bd remember` `sketch-*` content / `design`-field
-  direction): layout, palette, typography, spacing already chosen. **Treat these
-  as settled — do not re-ask them.**
+- Any **sketch finding** (read via `bd memories sketch` — the `sketch-*` content
+  stored by `bd remember`, plus the `design`-field direction): layout, palette,
+  typography, spacing already chosen. **Treat these as settled — do not re-ask
+  them.**
 - Detected **design-system state**: presence of `components.json` (shadcn),
   Tailwind config, existing design tokens, the frontend framework.
 
@@ -51,5 +52,8 @@ re-litigate decisions already locked by the sketch finding or design system.
 Return a single **draft UI contract** with one labelled section per area
 (Spacing / Color / Typography / Copywriting / Registry-safety), each stating the
 **locked decision** (concrete tokens/values where they exist) and citing its
-source (sketch finding, existing design system, or this session's answer). This
-draft is what `weft-ui-checker` validates and what `ui-phase` persists.
+source (sketch finding, existing design system, or this session's answer). Carry
+the **layout / visual hierarchy** decision (typically settled by the sketch
+finding) into the contract as well, so `weft-ui-checker`'s sixth dimension
+(Visuals) has a stated source to validate against. This draft is what
+`weft-ui-checker` validates and what `ui-phase` persists.
