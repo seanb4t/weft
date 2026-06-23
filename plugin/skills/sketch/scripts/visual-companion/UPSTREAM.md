@@ -25,4 +25,18 @@
   server.cjs placeholder page title + h1).
 - Internal identifiers left unchanged (not user-facing): `BRAINSTORM_*` env var
   names and the `window.brainstorm` content-frame API.
-- No functional/protocol changes.
+
+## Security hardening (weft-9i3) — functional divergence from upstream
+
+These are deliberate behavioral changes, not rebranding. Candidates to upstream
+to obra/superpowers; kept here until then.
+
+- **`helper.js` — XSS:** the choice indicator is built with `textContent` +
+  `createElement` instead of `innerHTML` string concatenation, so a choice
+  label whose text contains markup renders as inert text and can never inject
+  live DOM.
+- **`stop-server.sh` — unvalidated `kill`:** the PID read from
+  `state/server.pid` is validated as a positive integer **and** confirmed to be
+  our own `node … server.cjs` process before any signal is sent. This prevents a
+  malformed value (`0`, `-1`) from broadening `kill` to the caller's process
+  group, and a stale/reused PID from signaling an unrelated process.
