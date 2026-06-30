@@ -79,7 +79,7 @@ var semverPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 // resolveSource.
 func resolveSource(version, ref, local string) (source, refArg string, err error) {
 	if local != "" {
-		return local, "", nil
+		return normalizeLocalSource(local), "", nil
 	}
 	if ref != "" {
 		return repoSlug, ref, nil
@@ -89,6 +89,21 @@ func resolveSource(version, ref, local string) (source, refArg string, err error
 			"weft %s is not a released build — pass --ref <git-ref> or --local <path> to install", version)
 	}
 	return repoSlug, "v" + version, nil
+}
+
+// normalizeLocalSource makes a --local path acceptable to `claude plugin
+// marketplace add` (weft-54d). The CLI rejects a bare "." or a bare relative
+// path ("Invalid marketplace source format. Try: owner/repo, https://..., or
+// ./path") but accepts a ./-prefixed one. Absolute paths and paths already
+// anchored with "./" or "../" pass through unchanged.
+func normalizeLocalSource(local string) string {
+	if filepath.IsAbs(local) || strings.HasPrefix(local, "./") || strings.HasPrefix(local, "../") {
+		return local
+	}
+	if local == "." {
+		return "./"
+	}
+	return "./" + local
 }
 
 // Options drives one weft install invocation.

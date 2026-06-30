@@ -74,6 +74,29 @@ func TestResolveSourceLocalUsesPathNoRef(t *testing.T) {
 	}
 }
 
+// weft-54d: the claude CLI rejects a bare "." (or a bare relative path) as a
+// marketplace source — "Invalid marketplace source format. Try: owner/repo,
+// https://..., or ./path". resolveSource must normalize a relative --local to a
+// ./-prefixed form, while leaving absolute and already-dot-prefixed paths alone.
+func TestResolveSourceLocalNormalizesRelativePath(t *testing.T) {
+	cases := map[string]string{
+		".":        "./",
+		"plugin":   "./plugin",
+		"./plugin": "./plugin",
+		"../weft":  "../weft",
+		"/abs/x":   "/abs/x",
+	}
+	for in, want := range cases {
+		src, ref, err := resolveSource("0.0.0-dev", "", in)
+		if err != nil {
+			t.Fatalf("resolve(%q): %v", in, err)
+		}
+		if src != want || ref != "" {
+			t.Errorf("resolveSource local %q: got %q@%q, want %q (no ref)", in, src, ref, want)
+		}
+	}
+}
+
 // scriptRunner records calls and returns scripted results keyed on the joined
 // arg string. (Named distinctly from the cli package's routeRunner — different
 // package, different fn signature: this one keys on the pre-joined string.)
