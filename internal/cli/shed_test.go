@@ -132,9 +132,11 @@ func (r *routeRunner) Run(name string, args ...string) (run.Result, error) {
 }
 
 func TestShedIsolateStatusBeforeWorkspaceAdd(t *testing.T) {
+	root := t.TempDir() // real root so the weft-x4a parent MkdirAll succeeds
+	t.Cleanup(func() { _ = os.RemoveAll(root + "_worktrees") })
 	fake := &routeRunner{fn: func(name string, args []string) run.Result {
 		if name == "jj" && len(args) >= 2 && args[1] == "root" {
-			return run.Result{Stdout: "/repo/weft", Code: 0}
+			return run.Result{Stdout: root, Code: 0}
 		}
 		return run.Result{Code: 0}
 	}}
@@ -197,6 +199,28 @@ func TestShedIsolateBdUpdateFailureIsHardFailure(t *testing.T) {
 	_, err := newTestCmd(fake, "shed", "isolate", "weft-hjx.1.1")
 	if got := exit.Code(err); got != 2 {
 		t.Fatalf("bd update failure should be a hard failure (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+// weft-x4a: on a fresh repo the sibling <repo>_worktrees parent does not exist
+// yet, and jj workspace add will not create it. shed isolate must create the
+// parent before adding the workspace, or the add fails with os error 2 and the
+// bead is stranded in_progress.
+func TestShedIsolateCreatesWorktreesParentOnFreshRepo(t *testing.T) {
+	root := t.TempDir() // fresh repo; sibling <root>_worktrees does not exist yet
+	parent := root + "_worktrees"
+	t.Cleanup(func() { _ = os.RemoveAll(parent) })
+	fake := &routeRunner{fn: func(name string, args []string) run.Result {
+		if name == "jj" && len(args) >= 2 && args[1] == "root" {
+			return run.Result{Stdout: root, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	if _, err := newTestCmd(fake, "shed", "isolate", "weft-hjx.1.1"); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if fi, err := os.Stat(parent); err != nil || !fi.IsDir() {
+		t.Fatalf("shed isolate must create the sibling _worktrees parent %q on a fresh repo; stat err = %v", parent, err)
 	}
 }
 
@@ -416,9 +440,11 @@ func contains(ss []string, want string) bool {
 // held even on the failure path: bd update ran before the failing add.
 func TestShedIsolateWorkspaceAddFailureLeavesBeadInProgress(t *testing.T) {
 	var updatedBeforeAdd bool
+	root := t.TempDir() // real root so the weft-x4a parent MkdirAll succeeds
+	t.Cleanup(func() { _ = os.RemoveAll(root + "_worktrees") })
 	fake := &routeRunner{fn: func(name string, args []string) run.Result {
 		if name == "jj" && len(args) >= 2 && args[1] == "root" {
-			return run.Result{Stdout: "/repo/weft", Code: 0}
+			return run.Result{Stdout: root, Code: 0}
 		}
 		if name == "jj" && len(args) >= 3 && args[1] == "workspace" && args[2] == "add" {
 			return run.Result{Code: 1, Stderr: "jj: revision trunk() not found"}
