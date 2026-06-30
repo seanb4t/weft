@@ -53,6 +53,32 @@ directory name is ambiguous or unsuitable, ask the user for a prefix. `bd init` 
 local-only beads DB under `.beads/` (no Dolt remote — the user wires sync later). Confirm
 `.beads/` now exists before proceeding.
 
+### Decide whether to track the agent-interaction audit log
+
+`bd init` commits `.beads/interactions.jsonl` — bd's append-only per-session interaction
+log — as a **tracked** file, and its generated `.beads/.gitignore` does not exclude it.
+Left tracked, the log churns independently in every pick workspace, so `weft shed
+integrate` hits spurious 2-sided conflicts on `.beads/interactions.jsonl` that have nothing
+to do with the woven code (weft-1qq).
+
+This is repo-dependent — decide with the user:
+
+- **Default — exclude it from the warp** (recommended for any repo that will weave). The log
+  stays on disk as local telemetry but never enters a pick or the warp. Order matters: jj
+  only untracks a path that an ignore rule already matches, so ignore *then* untrack:
+
+  ```
+  grep -qxF interactions.jsonl .beads/.gitignore || echo interactions.jsonl >> .beads/.gitignore
+  jj file untrack .beads/interactions.jsonl
+  ```
+
+  After this `jj file list 'glob:.beads/**'` no longer lists `interactions.jsonl`, and the
+  file remains on disk untracked.
+
+- **Keep it tracked** only if the repo deliberately wants the interaction history in version
+  control. Then leave it as-is and accept that weaves may need to resolve recurring
+  `.beads/interactions.jsonl` conflicts — surface this trade-off to the user before choosing it.
+
 ---
 
 ## Phase 2 — Codebase map (one Explore pass)

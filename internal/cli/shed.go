@@ -125,6 +125,13 @@ func (a *App) newShedIsolateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Fresh-repo guard (weft-x4a): on a fresh clone the sibling
+			// <repo>_worktrees parent does not exist yet, and jj workspace add
+			// will not create it — the add fails with os error 2 and strands the
+			// bead in_progress. Create the wave-invariant parent once up front.
+			if err := os.MkdirAll(workspace.Root(root, a.Config.Workspace.Root), 0o755); err != nil {
+				return exit.Hardf("could not create worktrees parent: %v", err)
+			}
 			isolated := []string{}
 			for _, bead := range args {
 				// Status-first ordering invariant (spec §4): in_progress BEFORE
