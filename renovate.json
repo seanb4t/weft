@@ -22,7 +22,7 @@
         "/^\\.github/workflows/ci\\.ya?ml$/"
       ],
       "matchStrings": [
-        "BD_VERSION=(?<currentValue>[0-9][0-9.]*)"
+        "BD_VERSION=(?<currentValue>[0-9][0-9.]*(?:-rc\\.[0-9]+)?)"
       ],
       "depNameTemplate": "gastownhall/beads",
       "datasourceTemplate": "github-releases",

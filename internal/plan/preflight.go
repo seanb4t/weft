@@ -11,8 +11,9 @@ import (
 )
 
 // dropMarker is bd's stable phrase for a silently-dropped unknown field in a
-// graph plan (grounded against bd 1.0.5). Classify on this marker, not loose
-// English — mirrors the gh-api error-classification convention.
+// graph plan (grounded against bd 1.0.5; CI pins 1.1.0-rc.1, which emits the
+// same graph schema_version 1). Classify on this marker, not loose English —
+// mirrors the gh-api error-classification convention.
 const dropMarker = "unknown field(s)"
 
 // Preflight is the parsed result of `bd create --graph --dry-run --json`.
