@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Weft Contributors
+
+# Weft engine config (spec §8). Committed so a fresh clone can self-host the
+# weave out of the box — without this file `weft pick verify` has no gate and
+# exits 1 (weft-bcq).
+
+[verify]
+# The pick verify gate: a woven change must build and pass the suite before it
+# lands. Runs via `sh -c`; mirrors the Taskfile build + test tasks.
+command = "go build ./... && go test ./..."
