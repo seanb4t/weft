@@ -81,18 +81,19 @@ work needs attention" from collapsing into one number.
     "groups": [
       [{"bead": "weft-a1", "change": "q2"}, {"bead": "weft-a2", "change": "x9"}],
       [{"bead": "weft-a3", "change": "k4"}]
+    ],
+    "conflicts": [
+      {"bead": "weft-a3", "change": "k4"}
     ]
   },
-  "conflicts": [
-    { "bead": "weft-a2", "change": "k4",
-      "paths": ["internal/loom/rebase.go"], "lowest_ancestor": "k4" }
-  ],
   "next": "resolve-conflicts"
 }
 ```
 
-`ok`, `verb`, `data` are always present. `conflicts`, `next` are
-verb-dependent. `next` is an advisory hint (a string the prompt MAY branch on),
+`ok`, `verb`, `data` are always present. `data.conflicts` and the top-level
+`next` are verb-dependent — `conflicts` is nested under `data`, and each entry
+is `{bead, change}` only (`paths`/`n` enrichment is deferred to seam 4 §8 and is
+not emitted). `next` is an advisory hint (a string the prompt MAY branch on),
 never authoritative — the authoritative state is always re-derivable from `bd`
 + `jj`.
 
