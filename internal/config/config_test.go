@@ -68,6 +68,19 @@ func TestLoadParsesVerifyCommand(t *testing.T) {
 	}
 }
 
+// weft-bcq: the repo must ship a committed .weft/config.toml carrying a verify
+// gate, so a fresh clone can `weft pick verify` (self-host the weave) without
+// hand-authoring one. Guards against the file being dropped or emptied.
+func TestShippedConfigHasVerifyGate(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", ".weft", "config.toml"))
+	if err != nil {
+		t.Fatalf("shipped .weft/config.toml must parse: %v", err)
+	}
+	if cfg.Verify.Command == "" {
+		t.Fatal("shipped .weft/config.toml must define [verify].command so a fresh clone has a verify gate (weft-bcq)")
+	}
+}
+
 func TestPlanConfigDefaults(t *testing.T) {
 	var c Config
 	if c.PlanOverlapMax() != DefaultOverlapMax {

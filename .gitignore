@@ -54,7 +54,13 @@ tmp/
 
 # Superpowers brainstorming artifacts
 .superpowers/
-.weft/
+
+# .weft/ holds local engine state; ship only the committed config.toml so a
+# fresh clone has a verify gate out of the box (weft-bcq). Ignore the dir
+# contents but re-include the tracked config (dir must stay listable for the
+# negation to take effect — a bare `.weft/` would block it).
+.weft/*
+!.weft/config.toml
 
 # Stray beads export in worktree root (belongs under .beads/ only)
 /issues.jsonl

@@ -44,6 +44,43 @@ subsystems GSD only built to compensate.
 | **pick** | a single woven change (one bead → one jj change) |
 | **shed** | a parallel wave — the set of ready beads woven together |
 
+## Development
+
+Working on weft — or dogfooding the weave on any bd-managed repo — has three
+fresh-clone gotchas. A clean git tree is **not** a clean environment.
+
+**Get the `weft` CLI on PATH.** `weft install` registers the Claude Code plugin
+but does not put the binary on PATH. Build and link it yourself:
+
+```
+go install ./cmd/weft            # into $GOBIN / ~/go/bin
+# or: go build -o ~/.local/bin/weft ./cmd/weft
+```
+
+`weft install` also reports the running binary's path (and a symlink hint) in the
+envelope's `next` field.
+
+**The verify gate ships committed.** `.weft/config.toml` is tracked with a
+`[verify].command` (build + test), so `weft pick verify` works out of the box.
+Local engine state under `.weft/` stays gitignored — only the config is tracked.
+
+**Resetting the warp is not a re-checkout.** beads' Dolt database persists in the
+shared Dolt server *and* on the git remote (`refs/dolt/data`), so deleting the
+clone dir and re-cloning re-adopts the **same** warp — the fresh checkout comes
+back with the old beads, not an empty plan. To actually reset:
+
+```
+bd init --reinit-local                       # new local identity over .beads/
+bd init --reinit-local --discard-remote      # also drop remote history (TTY confirm)
+# non-interactive (agents/CI) needs the destroy-token; weft's prefix is 'weft':
+bd init --reinit-local --discard-remote --destroy-token=DESTROY-weft
+```
+
+The first `bd dolt push` after `--discard-remote` is a history-replacing
+force-push. For throwaway test isolation, point `BEADS_DIR` at a temp dir
+instead; `bd dolt clean-databases` drops stale test DBs from the shared server.
+See `bd init-safety` for the full flag contract.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
