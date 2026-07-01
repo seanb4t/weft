@@ -5,6 +5,8 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/seanb4t/weft/internal/install"
@@ -29,11 +31,16 @@ func (a *App) newInstallCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// weft-2kc: surface the running binary so a fresh agent can put it
+			// on PATH instead of hunting for a dist build. Best-effort — an
+			// os.Executable error just omits the hint, never fails the install.
+			binPath, _ := os.Executable()
 			data := map[string]any{
 				"plugin": res.Plugin, "marketplace": res.Marketplace,
 				"source": res.Source, "ref": res.Ref, "scope": res.Scope,
 				"uninstall": res.Uninstall, "registered": res.Registered,
 				"installed": res.Installed, "commands": res.Commands,
+				"binary":  binPath,
 				"dry_run": dryRun,
 			}
 			text := "installed weft plugin (" + res.Scope + ")"
@@ -45,6 +52,13 @@ func (a *App) newInstallCmd() *cobra.Command {
 			case uninstall:
 				text = "uninstalled weft plugin (" + res.Scope + ")"
 				next = "Restart Claude Code to unload the weft plugin."
+			}
+			// Real install only: append the on-PATH hint (dry-run installs
+			// nothing; uninstall is removing).
+			if !dryRun && !uninstall && binPath != "" {
+				next += " The weft binary is at " + binPath +
+					"; symlink it onto your PATH (e.g. `ln -s " + binPath +
+					" ~/.local/bin/weft`) so agents can invoke 'weft' directly."
 			}
 			return EmitNext(cmd, "install", data, text, next)
 		},

@@ -50,6 +50,31 @@ func TestInstallDryRunRunsNoSubprocess(t *testing.T) {
 	}
 }
 
+// weft-2kc: a real (non-dry-run) install must surface the running weft binary's
+// path so a fresh agent can put it on PATH instead of hunting for a dist build.
+func TestInstallSurfacesBinaryPathOnPath(t *testing.T) {
+	r := installRunner()
+	out, err := newTestCmd(r, "install", "--ref", "main", "--json")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	var env struct {
+		Data struct {
+			Binary string `json:"binary"`
+		} `json:"data"`
+		Next string `json:"next"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("envelope: %v\n%s", e, out.String())
+	}
+	if env.Data.Binary == "" {
+		t.Error("install envelope must carry data.binary (the running weft binary path)")
+	}
+	if !strings.Contains(env.Next, "PATH") {
+		t.Errorf("install next hint must tell the user to put the binary on PATH, got %q", env.Next)
+	}
+}
+
 // TestInstallDryRunOmitsRestartHint covers the Qodo PR #23 finding: a --dry-run
 // installs nothing, so the envelope's "next" must not carry the post-install
 // "Restart Claude Code to load" hint.
