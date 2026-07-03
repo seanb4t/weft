@@ -1,0 +1,29 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Weft Contributors
+#
+# SessionStart nudge: surface the interim steering pair (docs/roadmap.md +
+# docs/state.md) and flag staleness. Repo-local bootstrap tooling — NOT part
+# of the shipped weft plugin. Retires with the pair when weft plans weft
+# (docs/roadmap.md §2, exit criterion 1).
+
+cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
+STATE="docs/state.md"
+[ -f "$STATE" ] || exit 0
+
+updated=$(grep -m1 -oE 'Updated: [0-9]{4}-[0-9]{2}-[0-9]{2}' "$STATE" | cut -d' ' -f2)
+
+echo "Steering docs (interim cadence): read docs/roadmap.md (intent) then docs/state.md (position; updated ${updated:-unknown}) before picking up work. Grooming protocol: CLAUDE.md 'Steering docs'. If this session changes position (work lands, strays change, milestone moves), refresh docs/state.md before close."
+
+if [ -n "$updated" ]; then
+  now=$(date +%s)
+  then_s=$(date -j -f '%Y-%m-%d' "$updated" +%s 2>/dev/null || date -d "$updated" +%s 2>/dev/null)
+  if [ -n "$then_s" ]; then
+    days=$(( (now - then_s) / 86400 ))
+    if [ "$days" -gt 14 ]; then
+      echo "STALE: docs/state.md last updated $days days ago (>14). Refresh it this session or flag it to the user."
+    fi
+  fi
+fi
+
+exit 0

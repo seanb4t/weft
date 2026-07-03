@@ -2,8 +2,9 @@
 
 Spec-driven AI development orchestration, woven on **jj** (the loom) and
 **beads** (the warp/brain). Clean-room reimplementation of GSD Core's
-methodology on purpose-built substrates. See `docs/design.md` for the full
-design and `README.md` for the metaphor/vocabulary.
+methodology on purpose-built substrates. See `docs/roadmap.md` (intent) and
+`docs/state.md` (live position) to steer, `docs/design.md` for the full
+design, and `README.md` for the metaphor/vocabulary.
 
 ## Status
 
@@ -15,8 +16,10 @@ static binary, sits next to `bd` and `jj`).
 - **VCS is jj** (colocated). MUST use `jj`, MUST NOT use mutating git commands.
   The `jj:jujutsu` skill governs all VCS operations.
 - **beads is the brain.** Planning, the dependency graph (the "warp"), task
-  state, and scheduling live in beads. `bd ready` is the scheduler. There is no
-  `ROADMAP.md` / `STATE.md` / `SUMMARY.md`.
+  state, and scheduling live in beads. `bd ready` is the scheduler. No markdown
+  file mirrors task state — one bootstrap exception: the steering pair
+  `docs/roadmap.md` + `docs/state.md` (see "Steering docs" below). There is
+  still no `SUMMARY.md` and no task tracking outside beads.
 - **Recovery is change-scoped, never op-restore.** Use `jj abandon <change-id>`
   (bead-driven) and `jj op revert`. `jj op restore` is human-gated only — it
   rewinds the global op log and stales other workspaces (jj-vcs/jj#9208).
@@ -26,6 +29,29 @@ static binary, sits next to `bd` and `jj`).
   updating, or closing beads; after pushing code; and at session close — WITHOUT
   asking. The bead DB is local-only until synced; do not leave the warp stranded
   on one machine. (Owner: agent, not the user.)
+
+## Steering docs (interim — the bootstrap exception)
+
+`docs/roadmap.md` (intent: identity, target state, ordered path, §9
+provisional decisions) and `docs/state.md` (live position) are the steering
+layer adopted 2026-07-03 while weft cannot yet dogfood itself. They hold ONLY
+what `bd` cannot compute — never issue status, counts, or dependencies. They
+retire when weft plans weft (roadmap §2, exit criterion 1). A repo-local
+SessionStart hook (`.claude/hooks/session-start-steering`) surfaces them and
+flags staleness; it is bootstrap tooling, not part of the shipped plugin.
+
+Grooming protocol (agent-owned):
+
+- **Session start:** read `docs/state.md` before picking up work; treat its
+  "Next concrete step" as the default direction unless the user redirects.
+- **Position changed?** (work landed, strays changed, milestone moved) —
+  refresh `state.md` (Current focus / Strays / Next concrete step + the
+  `Updated:` date) before session close. A stale state.md is worse than none.
+- **`roadmap.md` moves only on intent changes** — a milestone completes or
+  reorders, a §9 decision is confirmed/overridden, the target shifts. Bump its
+  updated date; keep the §9 decision history.
+- **Never mirror bead state into either doc.** If a `bd` query can produce it,
+  it does not belong there.
 
 ## Conventions (mirrors holomush)
 
