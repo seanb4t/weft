@@ -37,8 +37,8 @@ mechanic with the **visual companion** from `obra/superpowers'` brainstorming
 skill — a zero-dependency Node.js browser server with live click-to-select
 interaction. It is **vendored into weft** (weft does not assume `dev-flow` is
 installed alongside it) and **rebranded to weft** (scratch dir `.weft/`,
-weft-branded UI chrome), with MIT attribution preserved in source headers and a
-top-level NOTICE.
+weft-branded UI chrome), with MIT attribution recorded in a NOTICE co-located in
+the vendored directory (the files carry no per-file license headers upstream).
 
 ## Decisions made in this session
 
@@ -49,7 +49,7 @@ top-level NOTICE.
 | sketch artifact lifecycle | Mockups are ephemeral, written to gitignored `.weft/` (or `/tmp` fallback); jj never snapshots gitignored paths in a colocated repo, so the working copy stays clean with no jj choreography. |
 | sketch durable output | Chosen visual direction → `sketch`-labelled **`bd remember`** + epic `design` field (same-session availability per ADR `weft-b19`). weft's analog of GSD's `sketch-findings-*/SKILL.md`. |
 | companion source | **Vendor** the zero-dep MIT server into weft's plugin tree (self-contained). Not a `dev-flow` runtime dependency. |
-| companion branding | Rebrand to weft: scratch dir `.weft/`, weft-branded `frame-template.html` chrome. MIT attribution retained in vendored source headers + NOTICE + an UPSTREAM pin of the obra source commit. |
+| companion branding | Rebrand to weft: scratch dir `.weft/`, weft-branded `frame-template.html` chrome. MIT attribution recorded in a co-located NOTICE + an UPSTREAM pin of the obra source — the vendored files carry no per-file license headers upstream. |
 | ui-phase structure | **Two agents** — `weft-ui-researcher` + `weft-ui-checker` — with a **≤2-iteration** revision loop (mirrors GSD). |
 | ui-phase durable output | UI contract → a **`decision` bead** (`ui-spec` label, `related` to the phase epic) **+** the phase epic `design` field. Not a `UI-SPEC.md` file. |
 | consumer | The already-shipped **`plan-phase`** (ccy.3). Modified to add a UI safety gate + to pass the UI contract to the planner. |
@@ -153,16 +153,17 @@ records click selections to `state_dir/events` for the agent to read next turn.
     `server.cjs`;
   - user-facing chrome in `frame-template.html` (header/title) reads **weft**,
     not Superpowers/brainstorm.
-- **Licensing.** Vendored files **retain their MIT headers** (original
-  copyright + MIT identifier) — they are NOT relicensed to Apache-2.0 and do
-  NOT receive weft's Apache SPDX header. A top-level **NOTICE** records the MIT
-  attribution; an **UPSTREAM** note pins the `obra/superpowers` source commit
-  and enumerates the weft modifications (`.weft/` rename, chrome rebrand).
-  weft's SPDX-header convention (Apache-2.0 on all weft-authored source) is a
-  contributor practice, **not** a CI-enforced gate — there is no SPDX/header
-  check in `.github/workflows/`. So no exemption needs wiring: the rule is
-  simply *do not add weft's Apache header to the vendored MIT files* (they keep
-  their MIT headers).
+- **Licensing.** The vendored files **carry no per-file license headers
+  upstream** — the MIT License applies to them via the `obra/superpowers`
+  repository LICENSE file. They are NOT relicensed to Apache-2.0 and do NOT
+  receive weft's Apache SPDX header. A **NOTICE** co-located in the vendored
+  directory records the MIT attribution; an **UPSTREAM** note pins the
+  `obra/superpowers` source commit and enumerates the weft modifications
+  (`.weft/` rename, chrome rebrand). weft's SPDX-header convention (Apache-2.0
+  on all weft-authored source) is a contributor practice, **not** a CI-enforced
+  gate — there is no SPDX/header check in `.github/workflows/`. So no exemption
+  needs wiring: the rule is simply *do not add weft's Apache header to the
+  vendored MIT files*.
 - **`.gitignore`.** Add `.weft/`. Leave the existing `.superpowers/` entry
   intact (it covers `dev-flow`'s own brainstorming when run inside this repo).
 
@@ -295,9 +296,9 @@ unchanged.
   `. --strict` — confirm both accept the added vendored non-markdown files
   (`.cjs`/`.sh`/`.js`/`.html`); the intra-tree path-citation grep (no
   `weft/(agents|references|workflows)/` paths in `plugin/`) is unaffected (the
-  vendored scripts cite no such intra-tree paths). The vendored files keep
-  their MIT headers; weft's Apache SPDX header is not added to them (no CI
-  header gate exists — see §2).
+  vendored scripts cite no such intra-tree paths). The vendored files carry no
+  per-file license headers; weft's Apache SPDX header is not added to them (no
+  CI header gate exists — see §2).
 - **Dogfood gate** (the ccy.4-style end-to-end run that caught real bugs):
   exercise `sketch → ui-phase → plan-phase` on a small frontend mock, verifying:
   the companion launches and serves variants (and the degraded `/tmp` fallback
@@ -324,8 +325,9 @@ Expected ADR(s), captured via `/capture-adrs` after the plan phase:
   completing the no-`.planning/` contract for the visual front of the funnel.
 - **Vendored MIT companion + weft rebrand + licensing.** Records the vendoring
   decision (self-contained, not a `dev-flow` dependency), the `.weft/`/chrome
-  rebrand as permitted MIT modifications, and the MIT-retained / Apache-exempt
-  header handling with NOTICE + UPSTREAM pin.
+  rebrand as permitted MIT modifications, and the no-per-file-header /
+  Apache-exempt handling (MIT via the upstream LICENSE) with NOTICE + UPSTREAM
+  pin.
 - **Config-less safety gate.** Records dropping GSD's `workflow.*` toggles in
   favour of an always-on skippable plan-phase nudge.
 
