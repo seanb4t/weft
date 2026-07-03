@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/seanb4t/weft/compare/v0.2.1...v0.2.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **sketch:** harden vendored visual-companion — XSS + unvalidated kill (weft-9i3) ([#92](https://github.com/seanb4t/weft/issues/92)) ([a9f77e7](https://github.com/seanb4t/weft/commit/a9f77e7e3b04e55e0411af6a0e52b384df6958e3))
+
 ## [0.2.1](https://github.com/seanb4t/weft/compare/v0.2.0...v0.2.1) (2026-07-03)
 
 
