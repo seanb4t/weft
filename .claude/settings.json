@@ -1,3 +1,17 @@
 {
-  "hooks": {}
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start-steering",
+            "timeout": 10,
+            "statusMessage": "Checking steering-doc freshness"
+          }
+        ]
+      }
+    ]
+  }
 }
