@@ -29,8 +29,8 @@ review (this cadence's founding audit, session `efb0aae7`) established: engine s
 spec-complete, doc corpus claiming otherwise, warp with zero forward plan, three stranded picks,
 three weeks of release drift.
 
-**Active implementation:** none in flight beyond the strays below. This session produced
-documentation (this doc pair), not code.
+**Active implementation:** the two remaining strays (weft-9i3, weft-aff) were finished and put
+up as PRs #92 / #93 this session; both await merge to cut 0.2.2.
 
 **Recently established (2026-07-03):**
 
@@ -49,22 +49,23 @@ documentation (this doc pair), not code.
 
 ## Strays (finished-or-near work, not landed — the doctor gap, found by hand)
 
-- **weft-8r4** — done + reviewed; PR #80 open since 06-22; needs merge.
-- **weft-aff** — done + review-verified; sitting undescribed/unpushed in `worktree-weft-aff`;
-  needs describe → push → PR.
-- **weft-9i3** — interrupted mid-TDD RED (network sandbox blocked pytest; pivoted to stdlib
-  unittest); ~248 lines incl. XSS/PID hardening sitting in `worktree-weft-9i3`; needs finishing.
-- **weft-ecj** — PR #89 open; a concurrent session owns it (and the `claude-status` workspace) —
-  do not touch.
-- **v0.2.1** — release PR #74 pending since 06-12; holds the sketch/ui-phase skills, the
-  SessionStart hook, and the dogfood fixes.
+- **weft-8r4** — merged (PR #80).
+- **weft-ecj** — merged (PR #89).
+- **v0.2.1** — released (PR #74 merged; 0.2.1 cut).
+- **weft-aff** — finished 2026-07-03: doc fix rebased onto 0.2.1, PR #93 open, awaiting merge.
+- **weft-9i3** — finished 2026-07-03: `stop-server.sh` PID-validation + ownership hardening
+  implemented against the RED test; `test_stop_server.py` GREEN 4/4 (needed a detached-spawn fix
+  so killed fakes reparent to init instead of lingering as zombies). PR #92 open, awaiting merge.
+  The Node/happy-dom XSS test (`helper.test.mjs`) is still unrun (needs `npm install`); the
+  `helper.js` fix itself is in place.
 
 ## Next concrete step
 
-Land the strays and merge #74 (roadmap §7.1). Then §7.2 (doc-refresh beads) and §7.3: run the
-unattended-trust milestone through `discuss` → plan → `plan-to-beads` to materialize the deferred
-seam scope (roadmap §5) into the warp — that run creates the first open epic since `weft-ccy`
-closed.
+Merge PRs #92 (weft-9i3) and #93 (weft-aff); the `fix:` in #92 makes release-please propose
+**0.2.2** — merge that release PR to cut it (roadmap §7.1, housekeeping-to-zero). Then §7.2
+(doc-refresh beads: `design.md` + seam 01–07 headers still claim "no implementation") and §7.3:
+run the unattended-trust milestone through `discuss` → plan → `plan-to-beads` to materialize the
+deferred seam scope (roadmap §5) into the warp — the first open epic since `weft-ccy` closed.
 
 ## Open questions / decisions in flight
 
@@ -83,9 +84,10 @@ closed.
 A fresh session should read, in order: `roadmap.md` (intent) → `design.md` + `seams/` (what's
 built) → this file (where we are). Then `bd ready` for the actual work queue.
 
-- **This pair + grooming infra land together** as bead weft-k2g's PR (steering docs, CLAUDE.md
-  edits, SessionStart hook). After merge: `jj git fetch`, rebase `--skip-emptied`, delete the
-  bookmark, close weft-k2g.
-- **Bead DB:** no mutations this session; nothing pending for `bd dolt push`.
-- **Two live threads:** (1) confirm the roadmap §9 provisional decisions; (2) start §7.1
-  (land the strays, cut the release).
+- **weft-9i3 / weft-aff** are PRs #92 / #93. After merge: `jj git fetch`, rebase
+  `--skip-emptied`, delete the `worktree-weft-9i3` / `worktree-weft-aff` bookmarks, forget +
+  `rm -rf` those two worktrees, and let the beads close on merge. Then merge the 0.2.2 release PR.
+- **Bead DB:** no mutations this session; the local Dolt server was down (`bd dolt push` refused),
+  but nothing is pending to sync.
+- **Two live threads:** (1) confirm the roadmap §9 provisional decisions; (2) after 0.2.2,
+  start §7.2/§7.3.
