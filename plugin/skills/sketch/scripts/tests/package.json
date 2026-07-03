@@ -1,0 +1,13 @@
+{
+  "name": "weft-sketch-script-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "weft-owned tests for the vendored visual-companion scripts (helper.js). Kept out of the vendored mirror so visual-companion/ stays a clean upstream copy.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.10.6"
+  }
+}
