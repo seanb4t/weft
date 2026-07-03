@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "weft",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Spec-driven AI dev orchestration on jj + beads — woven waves of ready picks.",
   "author": {
     "name": "Weft Contributors"

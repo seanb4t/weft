@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1](https://github.com/seanb4t/weft/compare/v0.2.0...v0.2.1) (2026-07-03)
+
+
+### Features
+
+* **weft-ccy.10:** sketch + ui-phase skills — visual direction + UI contract ([#77](https://github.com/seanb4t/weft/issues/77)) ([8b2a581](https://github.com/seanb4t/weft/commit/8b2a5812992b1dd99c307b2cc3a5cdddba6892d6))
+* **weft-ccy.9:** SessionStart hook — weft orientation + live warp status ([#73](https://github.com/seanb4t/weft/issues/73)) ([65f691b](https://github.com/seanb4t/weft/commit/65f691bfd72a2eac232c8bcc244144656d913cf7))
+
+
+### Bug Fixes
+
+* fresh-clone self-hosting papercuts (weft-bcq, weft-2kc, weft-kuj) ([#87](https://github.com/seanb4t/weft/issues/87)) ([12de5b4](https://github.com/seanb4t/weft/commit/12de5b4849a86f19d83555f8ddb259f34cb1eb86))
+* resolve three P2 dogfood bugs (weft-x4a, weft-54d, weft-1qq) ([#85](https://github.com/seanb4t/weft/issues/85)) ([8866b07](https://github.com/seanb4t/weft/commit/8866b07b8bb773abad8198eafba9858e8bcadd0c))
+
 ## [0.2.0](https://github.com/seanb4t/weft/compare/v0.1.1...v0.2.0) (2026-06-12)
 
 
