@@ -8,8 +8,9 @@ design, and `README.md` for the metaphor/vocabulary.
 
 ## Status
 
-**Design phase.** No engine yet. The engine will be a **Go binary** (single
-static binary, sits next to `bd` and `jj`).
+**Engine shipping.** `weft` is a **Go binary** (single static binary, sits next
+to `bd` and `jj`), released via GoReleaser. The original design→build plan (the
+`weft-hjx` tree) is complete; current work is hardening and polish.
 
 ## Hard rules
 
