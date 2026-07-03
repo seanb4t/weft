@@ -9,7 +9,9 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> Status: **design** — see [docs/design.md](docs/design.md). No engine yet.
+> Status: **the engine ships** — `weft` is a released Go binary (see
+> [releases](https://github.com/seanb4t/weft/releases)). [docs/design.md](docs/design.md)
+> has the full design.
 
 Weft is a meta-prompting / context-engineering system for AI coding agents. It
 takes the methodology proven by [GSD](https://github.com/open-gsd/gsd-core) —
