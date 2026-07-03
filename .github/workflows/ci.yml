@@ -26,7 +26,7 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum
-      - uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           # Exact pin (not the floating "~> v2" range), kept in lockstep with
@@ -46,7 +46,7 @@ jobs:
       # claude.ai/install.sh returns HTTP 403 in CI behind Cloudflare
       # (anthropics/claude-code#36306); the npm package is the CI-safe install.
       # Pinned for reproducible CI / supply-chain safety — bump deliberately.
-      - run: npm install -g @anthropic-ai/claude-code@2.1.185
+      - run: npm install -g @anthropic-ai/claude-code@2.1.197
       - run: claude plugin validate ./plugin --strict
       - run: claude plugin validate . --strict
       # ${CLAUDE_PLUGIN_ROOT} discipline: no stale weft/ intra-tree paths in the
