@@ -853,3 +853,4 @@ No workflow change needed — `.github/workflows/ci.yml:139` already runs `go te
 ## Out of scope (per spec)
 
 Doctor `--fix`; self-dogfood meta-loop; fovea onboard; golangci-lint / multi-arch; any change to spine / overlap forest / conflict-as-data vocabulary; non-Claude hosts.
+<!-- adr-capture: sha256=353b41b4960bf0d2; session=38459612; ts=2026-07-04T20:16:46Z; adrs=weft-jcg,weft-qc0,weft-0pq -->
