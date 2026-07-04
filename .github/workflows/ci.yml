@@ -46,7 +46,7 @@ jobs:
       # claude.ai/install.sh returns HTTP 403 in CI behind Cloudflare
       # (anthropics/claude-code#36306); the npm package is the CI-safe install.
       # Pinned for reproducible CI / supply-chain safety — bump deliberately.
-      - run: npm install -g @anthropic-ai/claude-code@2.1.197
+      - run: npm install -g @anthropic-ai/claude-code@2.1.198
       - run: claude plugin validate ./plugin --strict
       - run: claude plugin validate . --strict
       # ${CLAUDE_PLUGIN_ROOT} discipline: no stale weft/ intra-tree paths in the
