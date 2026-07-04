@@ -5,7 +5,7 @@
 
 # Seam 11 — Overlap-aware integration topology
 
-> Status: **draft** (pre-design-reviewer). Sub-spec of
+> Status: **shipped**. Sub-spec of
 > [`docs/design.md`](../design.md) §4–6 (weave + ship). Tracked as bead
 > `weft-eoe` (design bead). Descends from finding `weft-78k` (the single-wave
 > mixed-conflict cascade surfaced by the seam-10 E2E, `weft-w1y.4`). This seam

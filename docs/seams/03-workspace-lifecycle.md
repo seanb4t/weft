@@ -5,10 +5,10 @@
 
 # Seam 3 — Workspace lifecycle
 
-> Status: **design-reviewer READY** (round 2). Sub-spec of
+> Status: **shipped** (design-reviewer READY, round 2). Sub-spec of
 > [`docs/design.md`](../design.md) §9 open seam 3. Tracked as bead `weft-hjx.2`
-> (child of `weft-hjx`). Round-1 + round-2 minors fixed inline. No
-> implementation exists yet.
+> (child of `weft-hjx`). Round-1 + round-2 minors fixed inline. Implemented and
+> released.
 
 ## 1. Scope
 

@@ -5,11 +5,11 @@
 
 # Seam 4 — Conflict-resolution UX
 
-> Status: **design-reviewer READY** (round 2). Sub-spec of
+> Status: **shipped** (design-reviewer READY, round 2). Sub-spec of
 > [`docs/design.md`](../design.md) §9 open seam 4. Tracked as bead `weft-hjx.4`
 > (child of `weft-hjx`). Rounds 1–2 findings fixed inline (pick-land gate into
 > seam 1; resolution-workspace kind into seam 3 reaper; explicit squash --into).
-> No implementation exists yet.
+> Implemented and released.
 
 ## 1. Scope
 

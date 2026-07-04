@@ -5,11 +5,11 @@
 
 # Seam 1 — Engine command surface
 
-> Status: **design-reviewer READY** (round 1). Sub-spec of
+> Status: **shipped** (design-reviewer READY, round 1). Sub-spec of
 > [`docs/design.md`](../design.md) §9 open seam 1. Tracked as bead `weft-hjx.1`
 > (child of `weft-hjx`). Round-1 minors fixed inline (`pick land` bookmark,
-> `bd reopen` vs `--status open`, parent §5 staleness). No implementation
-> exists yet.
+> `bd reopen` vs `--status open`, parent §5 staleness). Implemented and
+> released.
 
 ## 1. Scope
 

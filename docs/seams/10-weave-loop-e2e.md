@@ -5,7 +5,7 @@
 
 # Seam 10 — Prove the weave loop end-to-end
 
-> Status: **draft** (pre-design-reviewer). Sub-spec of
+> Status: **shipped** (integration-gated E2E live in CI). Sub-spec of
 > [`docs/design.md`](../design.md) §9 (capstone — the loop the other seams
 > compose). Tracked as bead `weft-w1y` (child of `weft-hjx`). The weave loop
 > already exists as a draft: [`weft/workflows/execute.md`](../../weft/workflows/execute.md)

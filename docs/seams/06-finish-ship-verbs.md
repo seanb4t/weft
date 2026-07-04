@@ -5,13 +5,13 @@
 
 # Seam 6 — `weft finish` ship verbs
 
-> Status: **design-reviewer READY** (round 2). Sub-spec of
+> Status: **shipped** (design-reviewer READY, round 2). Sub-spec of
 > [`docs/design.md`](../design.md) §6 (Ship) and §9. Tracked as bead
 > `weft-hjx.9` (child of `weft-hjx`). Promotes the `finish open|reconcile` verbs
 > scoped — but left unbuilt — in [seam 1](01-command-surface.md) §4.4. Round-1
 > findings fixed inline (merge-detection revset §6.1.3; PR-body single-read +
 > helper §5; `merge_style` enum §8; `bookmark set -r @` clarification §4.1; ADR
-> materialization §9; `picks.title` envelope §8). No implementation exists yet.
+> materialization §9; `picks.title` envelope §8). Implemented and released.
 
 ## 1. Scope
 

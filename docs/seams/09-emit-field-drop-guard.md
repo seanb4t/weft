@@ -5,7 +5,7 @@
 
 # Seam 9 — Harden `plan emit` against bd field-drop
 
-> Status: **draft** (pre-design-reviewer). Sub-spec of
+> Status: **shipped**. Sub-spec of
 > [`docs/design.md`](../design.md) §9 / [seam 2](02-planning-emission.md) §8
 > (deferred "warp-plan.json JSON Schema + bd create --graph input mapping" and
 > "confirm beads label constraints"). Tracked as bead `weft-hjx.15` (child of
