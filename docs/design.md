@@ -5,10 +5,13 @@
 
 # Weft — Design
 
-> Status: **design-reviewer READY** (round 2). All five §9 open seams are now
-> designed and `design-reviewer` READY (see `docs/seams/`). **Design phase
-> complete** — next step is `writing-plans` on the seam specs. No implementation
-> exists yet.
+> Status: **shipped — architecture overview of what exists.** All eleven seams
+> (see [`docs/seams/`](seams/)) are designed, built, and released; the engine
+> ships as a single Go binary. Intent and the path now live in
+> [`roadmap.md`](./roadmap.md), live position in [`state.md`](./state.md), and the
+> atomic work graph is **beads**. §9 below is retained as history — the original
+> five-seam design plan, superseded by the eleven shipped seams and by
+> `roadmap.md`.
 
 ## 1. What Weft is
 
@@ -222,7 +225,14 @@ Mirrors the holomush Go setup:
 - `Taskfile.yml` + `.goreleaser.yml` added in seam 8; `.golangci.yaml` still
   deferred
 
-## 9. Open seams (next design steps)
+## 9. Open seams (historical — superseded by `roadmap.md`)
+
+> **History.** This section captured the original design plan when only five
+> seams were scoped and none were built. All eleven seams have since been
+> designed, built, and shipped; intent and sequencing now live in
+> [`roadmap.md`](./roadmap.md) (§4 inventories the shipped assets) and the atomic
+> work graph is **beads**. The list below is kept as the record of the initial
+> five-seam decomposition.
 
 Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
 `weft-hjx`.
@@ -245,8 +255,9 @@ Seam sub-specs live in [`docs/seams/`](seams/), each tracked as a child bead of
   **designed:** [`docs/seams/05-gsd-markdown-ports.md`](seams/05-gsd-markdown-ports.md)
   (`weft-hjx.5`).
 
-**All five open seams are now designed.** Each has its own `design-reviewer`
-verdict; see the linked sub-specs.
+These five were the initial decomposition; six more seams (06–11) followed as the
+design and build progressed. All eleven are now shipped — see
+[`docs/seams/`](seams/) for the per-seam specs.
 
 ## Attribution
 

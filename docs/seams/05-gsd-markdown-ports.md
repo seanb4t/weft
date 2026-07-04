@@ -5,11 +5,11 @@
 
 # Seam 5 — GSD markdown ports
 
-> Status: **design-reviewer READY** (round 1). Sub-spec of
+> Status: **shipped** (design-reviewer READY, round 1). Sub-spec of
 > [`docs/design.md`](../design.md) §9 open seam 5 (capstone). Tracked as bead
 > `weft-hjx.5` (child of `weft-hjx`). Round-1 minors fixed inline (§1/§8 ref;
-> install-verb hedge; `workflows/` host-dispatch note). No implementation
-> exists yet.
+> install-verb hedge; `workflows/` host-dispatch note). Implemented and
+> released.
 
 ## 1. Scope
 

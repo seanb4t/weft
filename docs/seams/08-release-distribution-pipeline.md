@@ -5,15 +5,15 @@
 
 # Seam 8 — Release & distribution pipeline
 
-> Status: **draft** (pre-design-reviewer). Sub-spec of
+> Status: **shipped**. Sub-spec of
 > [`docs/design.md`](../design.md) §8 (repo conventions; the deferred
 > Taskfile / `.golangci.yaml` / `.goreleaser.yaml`) and the release follow-up
 > noted in [seam 7](07-weft-install.md) §4.2 / §9. Tracked as bead
 > `weft-hjx.11` (child of `weft-hjx`). **Supersedes the *mechanism* of ADR
 > `weft-1nt`** (binary↔plugin version lockstep) while preserving its goal — see
-> §9. No release pipeline exists yet (`.github/workflows/`, `.goreleaser.yml`,
-> `Taskfile.yml` are all greenfield; `cog.toml` is a stub that references
-> GoReleaser + CI that do not exist).
+> §9. The release pipeline is live: release-please maintains the release PR and
+> merging it cuts the `vX.Y.Z` tag; GoReleaser builds the binary; strict plugin
+> validation runs in CI (`.github/workflows/`, `.goreleaser.yml` shipped).
 
 ## 1. Scope
 

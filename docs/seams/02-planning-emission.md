@@ -5,11 +5,11 @@
 
 # Seam 2 — Planning → warp emission
 
-> Status: **design-reviewer READY** (round 3). Sub-spec of
+> Status: **shipped** (design-reviewer READY, round 3). Sub-spec of
 > [`docs/design.md`](../design.md) §9 open seam 2. Tracked as bead `weft-hjx.3`
 > (child of `weft-hjx`). Rounds 1–3 findings fixed inline (re-plan identity via
-> `weft-ref:` labels; bd-command grounding citations; verb cross-refs). No
-> implementation exists yet.
+> `weft-ref:` labels; bd-command grounding citations; verb cross-refs).
+> Implemented and released.
 
 ## 1. Scope
 

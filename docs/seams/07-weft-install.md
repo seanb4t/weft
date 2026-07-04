@@ -5,12 +5,12 @@
 
 # Seam 7 — `weft install` (Claude Code plugin distribution)
 
-> Status: **draft** (pre-design-reviewer). Sub-spec of
+> Status: **shipped**. Sub-spec of
 > [`docs/design.md`](../design.md) §8 distribution and §9, and the deferred
 > sub-seam noted in [seam 5](05-gsd-markdown-ports.md) §8 ("the `weft install`
 > transform rules … and whether install is a `weft` verb or a separate tool").
-> Tracked as bead `weft-hjx.10` (child of `weft-hjx`). No implementation exists
-> yet.
+> Tracked as bead `weft-hjx.10` (child of `weft-hjx`). Implemented and released
+> (`weft install`).
 
 ## 1. Scope
 
