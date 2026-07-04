@@ -79,14 +79,16 @@ is done and does not change.
 
 A small package answering one question: *when was this workspace last worked?*
 
-- **Signals (existing state only):** the latest jj operation attributable to
-  the workspace, joined with a max-mtime walk of the workspace directory
-  (ignoring `.jj/`). An executor runs jj commands (snapshot on every command)
-  and edits files; either trace refreshes recency.
-- **First task of the pick:** empirically verify jj 0.43's op log attributes
-  operations to workspaces (op metadata / templates). If it does not, mtime
-  alone carries the signal — that fallback is inside the pick's acceptance,
-  not a new design round.
+- **Signals (existing state only):** the committer timestamp of the
+  workspace's working-copy commit (`jj log -r '<name>@' -T
+  'committer.timestamp()'` — jj refreshes it on every per-workspace snapshot,
+  i.e. every jj command the executor runs there), joined with a max-mtime walk
+  of the workspace directory (ignoring `.jj/`), which guards the
+  edited-files-but-ran-no-jj-command window. Empirically validated 2026-07-04
+  in this repo: an idle `worktree-agent-*` workspace's `@` timestamp was 12
+  days old while an active workspace's was minutes old. The op log is NOT
+  used: jj 0.43's op templates expose no workspace attribution (verified —
+  no `path`/workspace keyword; only `args` text).
 - **API shape:** `LastActivity(runner, root, wsName, wsPath) (time.Time, error)`
   plus `Live(t time.Time, threshold time.Duration) bool`. Callers own policy.
 - **Config:** `[liveness] threshold = "45m"` in `.weft/config.toml` (a
@@ -146,6 +148,17 @@ Everything else keeps today's fail-safe behavior (`beadStatus`'s
 infrastructure-vs-missing distinction is untouched). Reap also gains
 `--dry-run` for parity with the trust posture — report what would be reaped
 without forgetting anything.
+
+This pick also closes a latent hazard the design round surfaced in the code:
+today a *foreign* workspace (name resolving to a bead that does not exist —
+e.g. a Claude Code `worktree-agent-*` workspace) falls through `beadStatus`'s
+missing-bead path and is **forgotten** by reap, breaking whatever session owns
+it (its directory survives only because the `wtRoot/name` join points
+nowhere). The guard: a missing bead is an orphan **only if** its directory
+exists under the worktrees root (weft puts every workspace it creates there);
+missing bead + no directory under `wtRoot` → foreign → skip and leave for
+doctor to report. This makes the spec's "reap keeps its bead-linked remit"
+claim true rather than assumed.
 
 ### 4. `finish reconcile` re-verification (P2; independent)
 
