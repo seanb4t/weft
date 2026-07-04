@@ -162,19 +162,26 @@ claim true rather than assumed.
 
 ### 4. `finish reconcile` re-verification (P2; independent)
 
-Empirically verify both merge-style branches against the overlap-forest +
-parked-escalated shape (seam 11 §7):
+Seam 11 §7's two risks are *partially* retired already —
+`internal/weave/finish_topology_test.go` (landed 2026-06-09, bead
+`weft-8ou.7`) proves the merge-commit `jj rebase -b @ -o main --skip-emptied`
+leaves a **clean** parked sibling untouched
+(`TestReconcileMergeBranchLeavesParkedSiblingUntouched`, which replays the
+literal jj command) and that real `weft finish open`'s `-r` collapse leaves an
+escalated trunk-sibling's parent unchanged (`TestFinishOpenCollapseTopology`,
+which uses deliberately non-conflicting picks). This pick owns the remaining
+delta, not a re-derivation:
 
-- Does `jj rebase -b @ -o main --skip-emptied` drag a parked escalated sibling
-  onto main? If yes, scope the rebase to the collapsed line.
-- Does `jj rebase -r` re-parent an escalated descendant cleanly when its landed
-  parent is lifted out, leaving the escalated change conflicted on `trunk()` —
-  pushable-excluded, not dragged?
+- The parked escalated sibling **actually conflicted** (jj may select or
+  materialize a conflicted commit differently under rebase/`--skip-emptied`
+  than a clean one — the untested half of the seam 11 §7 claim).
+- Driving the **real `weft finish reconcile` verb** end-to-end (merge-style
+  detection, fetch, rebase, bookmark/remote-branch handling; gh mocked) rather
+  than replaying the raw jj command.
 
-Deliverable: integration tests covering both branches with an escalated
-sibling parked, plus whatever scoping fix the tests force. This is a
-verification-first pick: the tests are the point; a code change is conditional
-on what they reveal.
+Deliverable: integration tests covering that delta, plus whatever scoping fix
+they force. Verification-first: the tests are the point; a code change is
+conditional on what they reveal.
 
 ### 5. Resolver oscillation guard (P3; independent)
 

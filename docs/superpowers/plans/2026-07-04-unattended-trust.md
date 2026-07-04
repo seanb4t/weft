@@ -54,7 +54,7 @@ internal/weave/finish_topology_test.go (mod) integration: forest + parked-escala
 internal/weave/doctor_reap_e2e_test.go (new) integration: the milestone exit test
 ```
 
-Existing symbols reused (verified signatures): `workspace.Resolve(name) (beadID string, kind Kind)` (`internal/workspace/workspace.go:44`), `workspace.Root(jjRoot, cfgRoot)` (`:54`), `workspace.ContainsResolved(parent, child)` (`:100`), `beadStatus(r, bead)` (`internal/cli/reap.go:100`), `changeFromLabels`, `changeIDPattern` (`internal/cli/conflict.go:23`), `Emit(cmd, verb, data, text)`, `run.JJ/BD/GH`, `exit.Hardf/Invocationf`, test fakes `routeRunner`/`errRunner`/`newTestCmd` (`internal/cli/reap_test.go`).
+Existing symbols reused (verified signatures): `workspace.Resolve(name) (beadID string, kind Kind)` (`internal/workspace/workspace.go:44`), `workspace.Root(jjRoot, cfgRoot)` (`:54`), `workspace.ContainsResolved(parent, child)` (`:100`), `beadStatus(r, bead)` (`internal/cli/reap.go:100`), `changeFromLabels` (`internal/cli/bead.go:57`), `changeIDPattern` (`internal/cli/conflict.go:23`), `Emit(cmd, verb, data, text)`, `run.JJ/BD/GH`, `exit.Hardf/Invocationf`, test fakes `routeRunner`/`errRunner`/`newTestCmd` (package-scope test helpers defined in `internal/cli/version_test.go` and `internal/cli/shed_test.go`, usable from any `cli` test file).
 
 Verified CLI contracts: `bd list --status in_progress --json` (global, no `--parent`); `bd close <id> -r "<reason>"`; `bd update <id> --add-label X --remove-label Y`; `bd supersede` REQUIRES `--with <new>` (hence close-with-reason for successor-less removals). Verified jj facts (2026-07-04, jj 0.43): per-workspace snapshot refreshes `<name>@`'s committer timestamp (idle workspace showed 12-day-old timestamp; active showed minutes); `jj workspace list -T` has NO `path` keyword (workspace paths must come from the `wtRoot/name` join); op templates expose no workspace attribution.
 
@@ -303,7 +303,8 @@ Config additions (`internal/config/config.go` — add to the `Config` struct aft
 // unset. Conservative by design: a thinking-but-quiet executor can look dead;
 // the cost is bounded because reap runs at orchestrator startup/resume, not
 // mid-wave (seam 3 §5.1).
-func (c *Config) LivenessThreshold() (time.Duration, error) {
+// (Value receiver — matches the file's existing accessor convention.)
+func (c Config) LivenessThreshold() (time.Duration, error) {
 	if c.Liveness.Threshold == "" {
 		return 45 * time.Minute, nil
 	}
@@ -493,7 +494,7 @@ Expected: PASS, no regressions.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `reap_test.go` (existing tests at :17 and :77 must keep passing — the fresh-timestamp mock keeps their in_progress-kept semantics):
+Add to `reap_test.go`. Existing tests must keep passing: `:17` (`TestReapCollectsNonInProgressWorkspaces`) has an in_progress-kept workspace, so its mock gains a fresh-timestamp answer for the `jj log -r '<name>@'` liveness call; `:77` (`TestReapMalformedBeadJSONIsHardFailureAndPreservesWorkspace`) hard-fails on malformed `bd show` JSON before the liveness branch is ever reached and needs no mock change.
 
 ```go
 // TestReapCollectsCrashedExecutor: in_progress bead, workspace dir exists,
@@ -526,10 +527,10 @@ Expected: new tests FAIL (no liveness gate, no foreign guard, no --dry-run).
 
 - [ ] **Step 3: Implement**
 
-Replace `reap.go:53-61` (the `if status == "in_progress" { continue }` block) with the decision table; thread `--dry-run`; initialize `foreign := []string{}` and `wouldReap := []string{}`:
+Replace `reap.go:53-61` (the `if status == "in_progress" { continue }` block) with the decision table; thread `--dry-run`; initialize `foreign := []string{}` and `wouldReap := []string{}`. NOTE: `reap.go:65` already declares `dir := filepath.Join(wtRoot, name)` later in the same loop body — **move that declaration up** to feed the new checks and delete the later `:=` (a second `:=` of `dir` in the same block is a compile error):
 
 ```go
-			dir := filepath.Join(wtRoot, name)
+			dir := filepath.Join(wtRoot, name) // moved up from reap.go:65 — sole declaration
 			_, statErr := os.Stat(dir)
 			dirExists := statErr == nil
 			if status == "" && !dirExists {
@@ -578,40 +579,39 @@ Expected: PASS, including the two pre-existing reap tests.
 
 This is a verification-first pick (spec Component 4): the tests are the deliverable; the code change is conditional on what they reveal.
 
+**Scope — the delta only.** `internal/weave/finish_topology_test.go` ALREADY proves (landed 2026-06-09, bead `weft-8ou.7`): the merge-commit `jj rebase -b @ -o main --skip-emptied` leaves a **clean** parked sibling untouched (`TestReconcileMergeBranchLeavesParkedSiblingUntouched`, `:535` — which per its own `:531` comment "replays the literal jj rebase command rather than driving `weft finish`"), and real `weft finish open`'s `-r` collapse leaves an escalated trunk-sibling unmoved (`TestFinishOpenCollapseTopology`, `:266` — picks touch disjoint files, deliberately non-conflicting). Do NOT re-derive those. This task owns exactly two untested dimensions: (a) the parked escalated sibling being **actually conflicted**, and (b) the **real `weft finish reconcile` verb** driven end-to-end.
+
 - [ ] **Step 1: Write the two integration tests (expected to characterize, possibly fail)**
 
-Using the existing harness in `internal/weave/harness_test.go` (read it first; it builds a temp colocated repo with pinned bd+jj — reuse its fixture-seeding helpers rather than reinventing):
+Extend `finish_topology_test.go`, reusing its existing fixture/parser helpers (read `:13-100` first — it already has jj-log parsers tolerant of snapshot warnings and a gh-routing runner pattern for `weft finish open`):
 
 ```go
-// TestReconcileMergeCommitExcludesParkedEscalated (tag: integration)
-// Shape: trunk ── A ── B (collapsed landed line, bookmark <epic>, @ on top)
-//        trunk ── E     (escalated sibling parked on trunk, conflicted,
-//                        carrying the `human`-labelled bead's change)
-// 1. Simulate a merge-commit merge of <epic> on the remote (jj new main
-//    <epic-bookmark> on a clone, push main — the harness has remote helpers;
-//    if not, drive `gh` out of scope: mergeStyle only needs
-//    <epic>@origin & ::main@origin non-empty, which a local bare remote
-//    satisfies after pushing a merge commit to main).
-// 2. Run `weft finish reconcile <epic>` (mock prState if no real gh: route
-//    the runner's gh call to {"state":"MERGED"} — reconcile's jj side runs
-//    against the real repo; the cli App takes an injectable Runner, so wrap
-//    the real runner and intercept only `gh pr view`).
-// 3. ASSERT: E's change-id still has trunk() as parent and is NOT an
-//    ancestor of main / not rebased into the landed line; E still in
-//    conflicts(); the landed line's changes are emptied/absorbed.
+// TestReconcileVerbExcludesConflictedParkedSibling (tag: integration)
+// Same base shape as TestReconcileMergeBranchLeavesParkedSiblingUntouched
+// (:535) BUT: (a) the parked sibling E is made CONFLICTED (rebase a change
+// with a colliding edit onto E's line, the conflict_proof_test.go recipe —
+// jj records the conflict in-commit and proceeds), and (b) instead of
+// replaying the raw jj command, run the real verb: `weft finish reconcile
+// <epic>` with a runner that passes jj through and intercepts only
+// `gh pr view` → {"state":"MERGED"} and `gh repo view`/`gh api` (the
+// deleteRemoteBranch calls) → benign results.
+// ASSERT: E's change-id unchanged, parent still the base commit, E still in
+// conflicts(); no live change has E as parent; landed line emptied/absorbed;
+// reconcile's envelope reports merge_style=merge_commit.
 
-// TestRebaseRExcludesEscalatedDescendant (tag: integration)
-// Shape: group root G ── P1 (closed, landed) ── E (escalated descendant of
-// P1, conflicted). Drive the collapse path (finish open's per-change
-// `jj rebase -r`, see collapseClosedPicks finish.go:90) and ASSERT jj 0.43
-// re-parents E onto G / trunk() cleanly: E remains conflicted, excluded
-// from the pushed line, NOT dragged (seam 11 §7 second bullet).
+// TestFinishOpenCollapseWithConflictedEscalatedSibling (tag: integration)
+// TestFinishOpenCollapseTopology (:266) with one change: the escalated pick's
+// change is CONFLICTED (collide its file with a landed pick's edit before
+// integrate). Drive real `weft finish open` and ASSERT the `-r` collapse
+// (collapseClosedPicks, finish.go:90) re-parents/leaves the conflicted ESC on
+// trunk() — still conflicted, excluded from the pushed line, NOT dragged
+// (the untested half of seam 11 §7's second bullet).
 ```
 
 - [ ] **Step 2: Run them**
 
-Run: `go test -tags integration ./internal/weave/ -run 'TestReconcileMergeCommit|TestRebaseRExcludes' -v`
-Expected: either PASS (behavior already correct — the seam-11 §7 risk does not materialize) or FAIL with E dragged into the rebase set.
+Run: `go test -tags integration ./internal/weave/ -run 'TestReconcileVerbExcludes|TestFinishOpenCollapseWithConflicted' -v`
+Expected: either PASS (the conflicted-sibling delta behaves like the proven clean-sibling case) or FAIL with the conflicted E dragged/moved.
 
 - [ ] **Step 3 (conditional — only on FAIL): scope the merge-commit rebase**
 
@@ -702,7 +702,7 @@ In `newConflictOpenCmd` (before the `changeConflicted` gate at `conflict.go:86`)
 			// finalize must still count the attempt (crash-durable, spec Component 5)
 ```
 
-Config accessor mirrors `LivenessThreshold` (pointer-free int with 0 → default 3; explicit negative/zero → invocation error). Finalize's healed path (after the squash + reap, before Emit) removes the counter label; best-effort is NOT acceptable here — hard-fail on bd error like every other bd write in the file.
+Config field is `MaxResolveAttempts *int` under `[conflict]` — the pointer follows the `OverlapMax *int` precedent (`config.go:37`: "pointer: distinguishes unset from an explicit 0"), because a plain int cannot tell unset (Go zero value) from an explicit `max_resolve_attempts = 0`. Accessor: nil → default 3; explicit value < 1 → invocation error (the bd-ready-limit-0 gotcha class — a cap must never silently invert to no-cap). Finalize's healed path (after the squash + reap, before Emit) removes the counter label; best-effort is NOT acceptable here — hard-fail on bd error like every other bd write in the file.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
