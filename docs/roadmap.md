@@ -6,7 +6,7 @@
 # Weft — Roadmap (target state + path)
 
 > Status: **roadmap** — the living steering doc: what weft is *for*, the delta to it, and the
-> ordered path. Top of the doc pyramid. · Created/updated: 2026-07-03 ·
+> ordered path. Top of the doc pyramid. · Created/updated: 2026-07-04 ·
 > Authors: Sean Brandt (@seanb4t) · Assisted-by: Claude Fable 5
 >
 > - **Live position** — "where are we right now, what's next" → [`state.md`](./state.md), the
@@ -23,8 +23,8 @@
 > (fovea `docs/design/roadmap.md`, 2026-07-03). It never restates bead state, and it **retires when
 > weft plans weft** (§2, exit criterion 1) — the exception is self-liquidating.
 >
-> Items marked **⟐ provisional** are decisions resolved here with the recommended default, adopted
-> so this roadmap is actionable — pending Sean's confirmation (asked 2026-07-03). See §9.
+> The §9 decisions were adopted 2026-07-03 as recommended defaults and **confirmed by Sean
+> 2026-07-04** (all five as-proposed). They are now settled intent, not provisional.
 
 ---
 
@@ -143,8 +143,8 @@ Ordered by how directly it serves the target:
 **Remove:**
 
 - **The legacy `weft/` prompt tree** — 15 tracked files, unshipped, unvalidated, CI-fenced,
-  undocumented at top level; a newcomer cannot tell it from `plugin/`. **⟐ provisional: delete**
-  (git history preserves it; `plugin/` is the product). See §9.
+  undocumented at top level; a newcomer cannot tell it from `plugin/`. **✓ confirmed: delete**
+  (Sean 2026-07-04; git history preserves it; `plugin/` is the product). See §9.
 
 **Process fix:**
 
@@ -181,19 +181,19 @@ Ordered by how directly it serves the target:
 - **Not multi-host yet.** Claude Code is the only target runtime until a real need appears
   (seam 7 deferred).
 
-## 9. Decisions (provisional defaults, pending Sean)
+## 9. Decisions (confirmed 2026-07-04)
 
-Provisional resolutions reflect the recommended defaults, adopted so this roadmap is actionable.
-They stand until Sean confirms or overrides (asked 2026-07-03).
+Adopted 2026-07-03 as recommended defaults to make this roadmap actionable; **confirmed by Sean
+2026-07-04** (all five as-proposed, asked 2026-07-03). The rationale is kept as the decision record.
 
 1. **Next milestone = unattended-trust hardening (§7.4)** — over adoption/DX-first or
    new-capability-first. Rationale: it is the review's one structural gap, and both dogfood exits
-   (§2.1, §2.2) depend on it. **⟐ provisional.**
-2. **Legacy `weft/` tree: delete** rather than document (§6). **⟐ provisional.**
+   (§2.1, §2.2) depend on it. **✓ confirmed 2026-07-04.**
+2. **Legacy `weft/` tree: delete** rather than document (§6). **✓ confirmed 2026-07-04.**
 3. **v1.0 exit = fovea onboarded** (§2) — makes "done" externally testable rather than
-   self-declared. **⟐ provisional.**
+   self-declared. **✓ confirmed 2026-07-04.**
 4. **Materialize deferred seam scope into the warp now** (§7.3), even where priority is P4 —
-   parked-and-visible beats prose-and-forgotten. **⟐ provisional.**
+   parked-and-visible beats prose-and-forgotten. **✓ confirmed 2026-07-04.**
 5. **Release cadence: cut on milestone completion or two weeks, whichever comes first** — the
    three-week v0.2.1 drift (features + security-adjacent fixes sitting unreleased) should not
-   recur. **⟐ provisional.**
+   recur. **✓ confirmed 2026-07-04.**

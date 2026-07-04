@@ -29,11 +29,11 @@ review (this cadence's founding audit, session `efb0aae7`) established: engine s
 spec-complete, doc corpus claiming otherwise, warp with zero forward plan, three stranded picks,
 three weeks of release drift.
 
-**Active implementation:** roadmap **§7.2 honest docs** in flight — bead `weft-a01`, PR #98
-(`design.md` + all 11 seam headers refreshed from pre-implementation claims to shipped status;
-`design.md` §9 demoted to history superseded by `roadmap.md`). Housekeeping-to-zero (roadmap
-§7.1) is **done** — every stray landed and **0.2.2 is released** (PR #95). After §7.2 lands,
-next is §7.3.
+**Active implementation:** none pending — **§7.2 honest docs landed** (bead `weft-a01`; PR #98
+design corpus + PR #99 steering, both merged): `design.md` + all 11 seam headers now read
+shipped-status, `design.md` §9 demoted to history. Housekeeping-to-zero (roadmap §7.1) is **done**
+(0.2.2 released, PR #95). **§7.3 is next and now unblocked** — roadmap §9 confirmed by Sean
+2026-07-04 (see "Open questions").
 
 **Recently established (2026-07-03):**
 
@@ -66,17 +66,18 @@ the record of what §3's `weft doctor` should surface automatically instead of b
 
 ## Next concrete step
 
-**§7.2 honest docs** is in flight (bead `weft-a01`, PR #98) — `design.md` + all 11 seam headers
-refreshed from pre-implementation claims to shipped status, §9 demoted to history. **Land PR #98**,
-then **§7.3 encode the plan**: run the unattended-trust milestone (roadmap §3) through `discuss` →
-plan → `plan-to-beads` to materialize the deferred seam scope (roadmap §5) into the warp — the
-first open epic since `weft-ccy` closed. §7.3 is gated on roadmap §9 decision #4 (materialize-now),
-still pending Sean's confirm.
+**§7.3 encode the plan** — now unblocked (roadmap §9 confirmed 2026-07-04). Run the
+unattended-trust milestone (roadmap §3: `weft doctor`, `executor_live` liveness,
+resolver-oscillation guard, replan removed-pick supersede, seam-11 `finish reconcile` re-verify)
+through `discuss` → `writing-plans` → `plan-to-beads` to materialize the deferred seam scope into
+the warp — the first open epic since `weft-ccy` closed. Approved parallel task: **delete the legacy
+`weft/` tree** (roadmap §9 #2 / §6 "Remove") — tracked as its own bead.
 
 ## Open questions / decisions in flight
 
-- **Roadmap §9 provisional decisions (1–5)** — pending Sean's confirm/override: milestone choice,
-  legacy-tree deletion, fovea-as-v1.0-exit, materialize-now, release cadence.
+- **Roadmap §9 decisions (1–5)** — **confirmed by Sean 2026-07-04** (all five as-proposed):
+  milestone = unattended-trust hardening; delete legacy `weft/` tree; fovea-onboard = v1.0 exit;
+  materialize deferred scope now; release cadence = milestone-or-2-weeks. No longer in flight.
 - **weft-9i3 test approach** — resolved: kept the stdlib-`unittest` PID test (GREEN); the vendored
   script stays unhardened-for-zombies (production has none). The Node/happy-dom XSS test still
   needs a one-time `npm install` to run — outstanding follow-up.
@@ -90,9 +91,9 @@ still pending Sean's confirm.
 A fresh session should read, in order: `roadmap.md` (intent) → `design.md` + `seams/` (what's
 built) → this file (where we are). Then `bd ready` for the actual work queue.
 
-- **All landed:** weft-9i3 (#92) + weft-aff (#93) merged, beads closed, worktrees cleaned;
-  **0.2.2 released** (#95); the state-refresh (#94) merged.
-- **In flight:** §7.2 honest docs — bead `weft-a01`, PR #98 (design corpus refreshed to shipped
-  status). Bead DB synced — `bd dolt push` clean.
-- **Two live threads:** (1) confirm the roadmap §9 provisional decisions (§7.3 depends on #4);
-  (2) land PR #98, then start §7.3 (encode the unattended-trust plan into the warp).
+- **Landed this cycle:** §7.2 honest docs (PR #98 design corpus + PR #99 steering; bead `weft-a01`
+  closed); earlier — weft-9i3 (#92), weft-aff (#93), **0.2.2** (#95). Bead DB synced.
+- **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04 — the milestone question is closed.
+- **Next thread:** §7.3 — materialize the unattended-trust milestone into the warp (`discuss` →
+  plan → `plan-to-beads`), plus the approved legacy-`weft/`-tree deletion. Both are fresh work off
+  clean `main`.
