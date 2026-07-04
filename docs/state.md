@@ -6,7 +6,7 @@
 # Weft — STATE (live position)
 
 > Status: **living** — rewritten as work moves; the synthesis layer, NOT a source of truth. ·
-> Updated: 2026-07-03
+> Updated: 2026-07-04
 >
 > **What this is:** the live "where are we, what's next, why". Read
 > [`roadmap.md`](./roadmap.md) first for intent, then this file for position, then **beads** for
@@ -29,8 +29,11 @@ review (this cadence's founding audit, session `efb0aae7`) established: engine s
 spec-complete, doc corpus claiming otherwise, warp with zero forward plan, three stranded picks,
 three weeks of release drift.
 
-**Active implementation:** none. Housekeeping-to-zero (roadmap §7.1) is **done** — every stray
-landed and **0.2.2 is released** (PR #95). The warp has no open picks; next is §7.2/§7.3.
+**Active implementation:** roadmap **§7.2 honest docs** in flight — bead `weft-a01`, PR #98
+(`design.md` + all 11 seam headers refreshed from pre-implementation claims to shipped status;
+`design.md` §9 demoted to history superseded by `roadmap.md`). Housekeeping-to-zero (roadmap
+§7.1) is **done** — every stray landed and **0.2.2 is released** (PR #95). After §7.2 lands,
+next is §7.3.
 
 **Recently established (2026-07-03):**
 
@@ -39,9 +42,10 @@ landed and **0.2.2 is released** (PR #95). The warp has no open picks; next is �
   (roadmap §3).
 - This roadmap+state cadence adopted, mirroring fovea's, as the bootstrap exception to the
   no-ROADMAP hard rule.
-- README staleness fixed (#88, merged); CLAUDE.md fix in flight (#89, owned by a concurrent
-  session); `design.md` + seam 01–07 headers still stale and **untracked — needs a bead**
-  (roadmap §6 "Fix").
+- README staleness fixed (#88, merged); CLAUDE.md carve-out landed (bootstrap-exception +
+  "Steering docs" section now in CLAUDE.md); `design.md` + all 11 seam headers refreshed to
+  shipped status via `weft-a01` / PR #98 (roadmap §6 "Fix" — the honest-docs pass swept all
+  eleven seams, not just 01–07, for corpus coherence).
 - Grooming infrastructure added (bead weft-k2g): CLAUDE.md gained the hard-rule carve-out
   plus a "Steering docs" section with the agent-owned grooming protocol, and a repo-local
   SessionStart hook (`.claude/hooks/session-start-steering` + `.claude/settings.json`) now
@@ -62,12 +66,12 @@ the record of what §3's `weft doctor` should surface automatically instead of b
 
 ## Next concrete step
 
-Housekeeping-to-zero is done. Next is **§7.2 honest docs** — file a bead to refresh `design.md`
-(demote its §9 five-seam roadmap to history) and the seam 01–07 headers that still claim "no
-implementation exists", now contradicted by shipped **0.2.2** — then **§7.3 encode the plan**:
-run the unattended-trust milestone (roadmap §3) through `discuss` → plan → `plan-to-beads` to
-materialize the deferred seam scope (roadmap §5) into the warp — the first open epic since
-`weft-ccy` closed.
+**§7.2 honest docs** is in flight (bead `weft-a01`, PR #98) — `design.md` + all 11 seam headers
+refreshed from pre-implementation claims to shipped status, §9 demoted to history. **Land PR #98**,
+then **§7.3 encode the plan**: run the unattended-trust milestone (roadmap §3) through `discuss` →
+plan → `plan-to-beads` to materialize the deferred seam scope (roadmap §5) into the warp — the
+first open epic since `weft-ccy` closed. §7.3 is gated on roadmap §9 decision #4 (materialize-now),
+still pending Sean's confirm.
 
 ## Open questions / decisions in flight
 
@@ -87,9 +91,8 @@ A fresh session should read, in order: `roadmap.md` (intent) → `design.md` + `
 built) → this file (where we are). Then `bd ready` for the actual work queue.
 
 - **All landed:** weft-9i3 (#92) + weft-aff (#93) merged, beads closed, worktrees cleaned;
-  **0.2.2 released** (#95); the state-refresh (#94) merged. Warp is clean, no open picks.
-- **Bead DB:** weft-9i3 + weft-aff were closed locally, but the local Dolt server was down
-  (`bd dolt push` refused) — **those two closes are unsynced.** Run `bd dolt start && bd dolt push`
-  once the server is up so the warp isn't stranded on this machine.
-- **Two live threads:** (1) confirm the roadmap §9 provisional decisions; (2) start §7.2 (honest
-  docs) → §7.3 (encode the unattended-trust plan into the warp).
+  **0.2.2 released** (#95); the state-refresh (#94) merged.
+- **In flight:** §7.2 honest docs — bead `weft-a01`, PR #98 (design corpus refreshed to shipped
+  status). Bead DB synced — `bd dolt push` clean.
+- **Two live threads:** (1) confirm the roadmap §9 provisional decisions (§7.3 depends on #4);
+  (2) land PR #98, then start §7.3 (encode the unattended-trust plan into the warp).
