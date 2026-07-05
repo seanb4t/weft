@@ -9,6 +9,7 @@ package config
 import (
 	"errors"
 	"io/fs"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -36,6 +37,9 @@ type Config struct {
 		Structural []string `toml:"structural"`
 		OverlapMax *int     `toml:"overlap_max"` // pointer: distinguishes unset from an explicit 0
 	} `toml:"plan"`
+	Liveness struct {
+		Threshold string `toml:"threshold"`
+	} `toml:"liveness"`
 }
 
 // Load reads the TOML config at path. A missing file is not an error — it
@@ -92,4 +96,15 @@ func (c Config) PlanOverlapMax() int {
 		return 0
 	}
 	return *c.Plan.OverlapMax
+}
+
+// LivenessThreshold returns the [liveness] threshold, defaulting to 45m when
+// unset. Conservative by design: a thinking-but-quiet executor can look dead;
+// the cost is bounded because reap runs at orchestrator startup/resume, not
+// mid-wave (seam 3 §5.1).
+func (c Config) LivenessThreshold() (time.Duration, error) {
+	if c.Liveness.Threshold == "" {
+		return 45 * time.Minute, nil
+	}
+	return time.ParseDuration(c.Liveness.Threshold)
 }

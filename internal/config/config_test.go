@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {
@@ -121,5 +122,22 @@ func TestPlanOverlapMaxNegativeClampsToZero(t *testing.T) {
 	}
 	if cfg.PlanOverlapMax() != 0 {
 		t.Errorf("negative overlap_max must clamp to 0 (serialize on any non-structural overlap), got %d", cfg.PlanOverlapMax())
+	}
+}
+
+func TestLivenessThresholdDefaultAndParse(t *testing.T) {
+	var c Config
+	d, err := c.LivenessThreshold()
+	if err != nil || d != 45*time.Minute {
+		t.Errorf("unset threshold: got %v, %v; want 45m, nil", d, err)
+	}
+	c.Liveness.Threshold = "90m"
+	d, err = c.LivenessThreshold()
+	if err != nil || d != 90*time.Minute {
+		t.Errorf("90m: got %v, %v", d, err)
+	}
+	c.Liveness.Threshold = "not-a-duration"
+	if _, err = c.LivenessThreshold(); err == nil {
+		t.Error("malformed threshold must error")
 	}
 }
