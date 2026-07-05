@@ -24,16 +24,18 @@
 
 ## Current focus
 
-**Milestone:** housekeeping-to-zero + re-encoding the plan (roadmap §7.1–7.3). The 2026-07-03 deep
-review (this cadence's founding audit, session `efb0aae7`) established: engine shipped and
-spec-complete, doc corpus claiming otherwise, warp with zero forward plan, three stranded picks,
-three weeks of release drift.
+**Milestone:** unattended-trust hardening (roadmap §3 / §7.4). **§7.3 "encode the plan" is
+done** — the milestone was designed and materialized into the warp 2026-07-04 (session
+`38459612`): design bead `weft-x38` ran brainstorming → design-review (READY r2) →
+writing-plans → plan-review (READY r2) → capture-adrs (3 ADRs: `weft-jcg` liveness-inferred,
+`weft-qc0` doctor-never-mutates, `weft-0pq` replan-can't-drop-woven-work) → plan-to-beads,
+which promoted `weft-x38` into the milestone epic with seven child picks. Spec:
+`docs/superpowers/specs/2026-07-04-unattended-trust-design.md`; plan:
+`docs/superpowers/plans/2026-07-04-unattended-trust.md`.
 
-**Active implementation:** none pending — **§7.2 honest docs landed** (bead `weft-a01`; PR #98
-design corpus + PR #99 steering, both merged): `design.md` + all 11 seam headers now read
-shipped-status, `design.md` §9 demoted to history. Housekeeping-to-zero (roadmap §7.1) is **done**
-(0.2.2 released, PR #95). **§7.3 is next and now unblocked** — roadmap §9 confirmed by Sean
-2026-07-04 (see "Open questions").
+**Active implementation:** none yet — the epic's picks are fresh; `bd ready` is the queue
+(wave shape: liveness + three independent guards first, then doctor + reap wiring, then the
+roadmap §7.4 exit-test E2E).
 
 **Recently established (2026-07-03):**
 
@@ -66,11 +68,11 @@ the record of what §3's `weft doctor` should surface automatically instead of b
 
 ## Next concrete step
 
-**§7.3 encode the plan** — now unblocked (roadmap §9 confirmed 2026-07-04). Run the
-unattended-trust milestone (roadmap §3: `weft doctor`, `executor_live` liveness,
-resolver-oscillation guard, replan removed-pick supersede, seam-11 `finish reconcile` re-verify)
-through `discuss` → `writing-plans` → `plan-to-beads` to materialize the deferred seam scope into
-the warp — the first open epic since `weft-ccy` closed. Approved parallel task: **delete the legacy
+**Execute the unattended-trust epic (`weft-x38`)** — merge the §7.3 docs PR (spec + plan +
+ADRs + this refresh), then work the warp: `bd ready --parent weft-x38` and drain the waves
+(each pick's description carries its plan reference; read the plan task verbatim before
+starting). Milestone exit test = roadmap §7.4: kill an executor mid-pick and strand a
+workspace — one `weft doctor` run surfaces both. Approved parallel task: **delete the legacy
 `weft/` tree** (roadmap §9 #2 / §6 "Remove") — tracked as its own bead.
 
 ## Open questions / decisions in flight
@@ -81,19 +83,21 @@ the warp — the first open epic since `weft-ccy` closed. Approved parallel task
 - **weft-9i3 test approach** — resolved: kept the stdlib-`unittest` PID test (GREEN); the vendored
   script stays unhardened-for-zombies (production has none). The Node/happy-dom XSS test still
   needs a one-time `npm install` to run — outstanding follow-up.
-- **Workspace hygiene** — the three `worktree-weft-*` picks were forgotten + removed this cycle.
-  Still ~7 empty `worktree-agent-*` jj workspaces + `worktree-agent-*` bookmarks (Claude Code
-  worktree-isolation leftovers, outside `weft reap`'s bead-linked remit). Sweep manually, or teach
-  `reap`/`doctor` to flag foreign workspaces?
+- **Workspace hygiene** — resolved by the §7.3 design: `doctor` *flags* foreign workspaces
+  (`worktree-agent-*` leftovers) as a `foreign` finding for manual sweep; `reap` gains a guard so
+  it never forgets them (the design round found today's reap would — a live-session hazard).
+  Until those picks land, sweep manually.
 
 ## Session handoff
 
 A fresh session should read, in order: `roadmap.md` (intent) → `design.md` + `seams/` (what's
 built) → this file (where we are). Then `bd ready` for the actual work queue.
 
-- **Landed this cycle:** §7.2 honest docs (PR #98 design corpus + PR #99 steering; bead `weft-a01`
-  closed); earlier — weft-9i3 (#92), weft-aff (#93), **0.2.2** (#95). Bead DB synced.
-- **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04 — the milestone question is closed.
-- **Next thread:** §7.3 — materialize the unattended-trust milestone into the warp (`discuss` →
-  plan → `plan-to-beads`), plus the approved legacy-`weft/`-tree deletion. Both are fresh work off
-  clean `main`.
+- **Landed this cycle:** §7.3 encode-the-plan — unattended-trust milestone designed
+  (spec + plan, both reviewer-READY), 3 ADRs captured, epic `weft-x38` + seven picks + edges
+  materialized and synced. Earlier: §7.2 honest docs (PR #98 + #99; `weft-a01`), 0.2.2 (#95).
+- **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04; §7.3 design decisions recorded
+  as ADRs `weft-jcg` / `weft-qc0` / `weft-0pq` and in the spec's Decisions section.
+- **Next thread:** merge the §7.3 docs PR, then execute the epic's wave 1 (`bd ready --parent
+  weft-x38`), plus the approved legacy-`weft/`-tree deletion. Both are fresh work off clean
+  `main`.
