@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/seanb4t/weft/internal/exit"
 )
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {
@@ -122,6 +124,50 @@ func TestPlanOverlapMaxNegativeClampsToZero(t *testing.T) {
 	}
 	if cfg.PlanOverlapMax() != 0 {
 		t.Errorf("negative overlap_max must clamp to 0 (serialize on any non-structural overlap), got %d", cfg.PlanOverlapMax())
+	}
+}
+
+// TestMaxResolveAttemptsConfig verifies the [conflict] max_resolve_attempts cap
+// (spec I4): default 3 when unset, an explicit value honored, and a configured
+// value < 1 rejected as an invocation error — a cap must never silently invert
+// to no-cap (the bd-ready-limit-0 gotcha class).
+func TestMaxResolveAttemptsConfig(t *testing.T) {
+	// Unset -> default.
+	var c Config
+	got, err := c.MaxResolveAttempts()
+	if err != nil {
+		t.Fatalf("unset must not error: %v", err)
+	}
+	if got != DefaultMaxResolveAttempts {
+		t.Errorf("unset MaxResolveAttempts() = %d, want default %d", got, DefaultMaxResolveAttempts)
+	}
+
+	// Explicit value honored.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[conflict]\nmax_resolve_attempts = 5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	got, err = cfg.MaxResolveAttempts()
+	if err != nil {
+		t.Fatalf("explicit 5 must not error: %v", err)
+	}
+	if got != 5 {
+		t.Errorf("MaxResolveAttempts() = %d, want 5", got)
+	}
+
+	// < 1 rejected as an invocation error (exit 1): a cap must never invert to no-cap.
+	zero := 0
+	var c2 Config
+	c2.Conflict.MaxResolveAttempts = &zero
+	if _, err := c2.MaxResolveAttempts(); err == nil {
+		t.Fatal("max_resolve_attempts = 0 must be rejected")
+	} else if code := exit.Code(err); code != 1 {
+		t.Errorf("max_resolve_attempts = 0 must be an invocation error (exit 1), got exit %d", code)
 	}
 }
 
