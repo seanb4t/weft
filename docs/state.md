@@ -63,10 +63,10 @@ The founding audit's manual bead×workspace×change join is now the shipped `wef
 capability. The old stray-pick roster (weft-8r4 #80, weft-ecj #89, weft-aff #93, weft-9i3 #92;
 v0.2.1 #74, v0.2.2 #95) is retired from this doc; git history holds it.
 
-- **New this cycle:** the `/drain` run left an isolated jj workspace `drain-epic-weft-x38` (+
-  transient agent sub-worktrees its reviewers created). These are precisely what the
-  freshly-shipped `weft doctor` / `weft reap` exist to flag — a good first live target for the
-  tooling.
+- **New this cycle:** the `/drain` run plus this session's review fan-outs left a pile of stale jj
+  workspaces — `worktree-drain-epic-weft-x38` and ~40 `worktree-agent-*` isolation worktrees
+  (Claude Code subagent leftovers). These are precisely what the freshly-shipped `weft doctor` /
+  `weft reap` foreign-workspace guard exists to flag — a good first live target for the tooling.
 - **Carried:** the weft-9i3 Node/happy-dom XSS test (`helper.test.mjs`) is still unrun (needs a
   one-time `npm install`); the `helper.js` fix itself shipped in 0.2.2.
 
@@ -77,10 +77,10 @@ end-to-end through weft's *own* loop (feature/new-project skill → `plan emit` 
 picks → `finish`), not the dev-flow meta-tooling that built v0.x. With §3 unattended-trust
 landed, this is the next milestone — and the first one weft can plausibly run on itself.
 
-**Carried (independent):** delete the legacy `weft/` prompt tree — **`weft-9q5` is still open**
-(Sean-approved 2026-07-04, roadmap §9 #2); the 15-file tree remains tracked. Do it as its own
-small PR. And sweep the `/drain` leftover workspaces (see Strays) — now a `weft doctor`/`reap`
-job, no longer by-hand.
+**Carried (independent):** the legacy `weft/` prompt tree is **gone** — `weft-9q5` landed via
+PR #107 (15 files removed, `NOTICE` repointed `weft/`→`plugin/`, seam-10 de-linked, review gate
+PASS). Remaining carry: sweep the ~40 stale `worktree-*` jj workspaces this session left (see
+Strays) — now a `weft doctor`/`reap` job, no longer by-hand.
 
 ## Open questions / decisions in flight
 
@@ -103,9 +103,10 @@ built) → this file (where we are). Then `bd ready` for the actual work queue.
 
 - **Landed this cycle:** the **unattended-trust milestone** — epic `weft-x38` (§7.4) executed
   end-to-end via `/drain` (9 picks, invariants I1–I4 by test, `/review-pr` PASS) and merged as
-  PR #103; §7.3 materialization + 3 ADRs (`weft-jcg`/`weft-qc0`/`weft-0pq`) preceded it. Epic +
-  drain beads closed, warp synced.
+  PR #103; §7.3 materialization + 3 ADRs (`weft-jcg`/`weft-qc0`/`weft-0pq`) preceded it. Steering
+  groomed in #106; the **legacy `weft/` tree was deleted** (`weft-9q5`, PR #107). Epic + drain
+  beads closed, warp synced.
 - **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04.
-- **Next thread:** roadmap §7 step 5 — **weft weaves weft** (exit criterion 1). Carried: legacy
-  `weft/`-tree deletion (`weft-9q5`, open) + `/drain` workspace sweep via the newly-shipped
-  `doctor`/`reap`. All fresh work off clean `main` (#103).
+- **Next thread:** roadmap §7 step 5 — **weft weaves weft** (exit criterion 1). Carried: sweep the
+  stale `worktree-*` jj workspaces this session left, via the newly-shipped `doctor`/`reap`. All
+  fresh work off clean `main` (#107).
