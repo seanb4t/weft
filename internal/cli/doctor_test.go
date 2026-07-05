@@ -544,6 +544,91 @@ func TestDoctorBDListFailureIsHardExit2(t *testing.T) {
 	}
 }
 
+// --- Invariant I1: doctor reports, never mutates (ADR weft-qc0) -------------
+
+// TestDoctorNeverMutates is the DIRECT assertion of invariant I1 (plan
+// 2026-07-04-unattended-trust.md:850 — "no bd/jj write calls in any doctor
+// test's runner log"). It mirrors resume_test.go's TestResumeProjectsState
+// call-log scan, but over a fixture engineered to reach ALL THREE doctor
+// passes and emit a finding in each — so a regression that mutated in Pass 2
+// (landed-unclosed/conflicted) or Pass 3 (unreconciled), invisible to the
+// Pass-1-scoped E2E behavioral proxy (weft-x38.7), is caught here. The scan is
+// exhaustive: every token of every recorded subprocess call is matched
+// exactly (not substring — so "--status closed" is not mistaken for "close",
+// and jj's "--no-pager"-prefixed calls are still checked) against the full set
+// of write verbs weft could plausibly issue (bd update/close; jj
+// rebase/new/abandon/squash/workspace forget/bookmark set|create|delete; gh pr
+// create / api -X DELETE|POST|PATCH).
+func TestDoctorNeverMutates(t *testing.T) {
+	root := t.TempDir()
+	// Pass 1 needs a stray (in_progress + stale liveness) and an orphan
+	// (closed bead) with real dirs; the foreign workspace must have NO dir.
+	mkdirs(t, root, "weft-hjx__1__1", "weft-hjx__1__2")
+	fake := doctorFake(doctorCfg{
+		root:       root,
+		workspaces: "default\nweft-hjx__1__1\nweft-hjx__1__2\nworktree-agent-abc\n",
+		beadShow: map[string]run.Result{
+			"weft-hjx.1.1": {Stdout: `[{"status":"closed"}]`, Code: 0},      // → orphan/bead-not-in-progress
+			"weft-hjx.1.2": {Stdout: `[{"status":"in_progress"}]`, Code: 0}, // stale → stray/stale-activity
+			// worktree-agent-abc: no beadShow entry + no dir → foreign/no-bead
+		},
+		stale: map[string]bool{"weft-hjx__1__2": true},
+		// Pass 2: 1.2 is deduped via seenStray; 1.3's change is in trunk()
+		// (stray/landed-unclosed); 1.5's change conflicts (conflicted).
+		inProgress: `[{"id":"weft-hjx.1.2","labels":["jj-change:aaa222"]},` +
+			`{"id":"weft-hjx.1.3","labels":["jj-change:abc123"]},` +
+			`{"id":"weft-hjx.1.5","labels":["jj-change:ghi789"]}]`,
+		landed:     map[string]bool{"abc123": true},
+		conflicted: map[string]bool{"ghi789": true},
+		// Pass 3: an open epic whose bookmark remains while its PR is MERGED
+		// (unreconciled/pr-merged-local-remains).
+		epicStatus: `[{"epic":{"id":"weft-hjx","status":"open"}}]`,
+		bookmarks:  map[string]string{"weft-hjx": "weft-hjx: qp 12ab (empty) description\n"},
+		prView:     map[string]run.Result{"weft-hjx": {Stdout: `{"state":"MERGED"}`, Code: 0}},
+	})
+	out, err := newTestCmd(fake, "doctor", "--json")
+	if err != nil {
+		t.Fatalf("doctor must exit 0 even with findings, got err=%v", err)
+	}
+	s := out.String()
+
+	// Prove the fixture actually exercised every mutation-capable path: one
+	// finding from each pass must be present, so this is not a vacuous no-op.
+	wantFindings := []string{
+		`"category": "orphan"`, `"reason": "bead-not-in-progress"`, // Pass 1
+		`"category": "stray"`, `"reason": "stale-activity"`, // Pass 1
+		`"category": "foreign"`, `"reason": "no-bead"`, // Pass 1
+		`"reason": "landed-unclosed"`,                               // Pass 2
+		`"category": "conflicted"`, `"reason": "change-conflicted"`, // Pass 2
+		`"category": "unreconciled"`, `"reason": "pr-merged-local-remains"`, // Pass 3
+	}
+	for _, w := range wantFindings {
+		if !strings.Contains(s, w) {
+			t.Fatalf("fixture must reach all three passes; missing %s in: %s", w, s)
+		}
+	}
+
+	// The invariant. Every write verb weft could issue, matched per-token and
+	// exact so read forms that merely share a stem (bd list --status *closed*,
+	// jj *bookmark list*, jj *workspace list*) never trip it.
+	mutating := map[string]bool{
+		"update": true, "close": true, "import": true, // bd writes (import mutates the warp)
+		"forget": true, "describe": true, "new": true, // jj workspace/change writes
+		"rebase": true, "abandon": true, "squash": true, // jj change writes
+		"add": true, "push": true, "commit": true, // jj workspace add | git push | commit (all mutate); bd dep add also caught by "add"
+		"set": true, "create": true, "delete": true, // jj bookmark set|create|delete (bookmark *list* is read)
+		"api": true, "-X": true, // gh api ... (all gh writes go through api -X <method>)
+		"POST": true, "PATCH": true, "DELETE": true, // gh api methods
+	}
+	for _, c := range fake.calls {
+		for _, tok := range c {
+			if mutating[tok] {
+				t.Fatalf("I1 violated: doctor issued a mutating call: %v", c)
+			}
+		}
+	}
+}
+
 // Text (non-JSON) output stays terse and healthy when the warp is clean.
 func TestDoctorTextHealthy(t *testing.T) {
 	root := t.TempDir()
