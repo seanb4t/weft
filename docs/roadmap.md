@@ -6,7 +6,7 @@
 # Weft — Roadmap (target state + path)
 
 > Status: **roadmap** — the living steering doc: what weft is *for*, the delta to it, and the
-> ordered path. Top of the doc pyramid. · Created/updated: 2026-07-04 ·
+> ordered path. Top of the doc pyramid. · Created/updated: 2026-07-05 ·
 > Authors: Sean Brandt (@seanb4t) · Assisted-by: Claude Fable 5
 >
 > - **Live position** — "where are we right now, what's next" → [`state.md`](./state.md), the
@@ -67,6 +67,12 @@ bead label, collapsing recovery, audit, and resume-after-compaction into one poi
 
 ## 3. The remaining architectural move
 
+> **✓ Landed 2026-07-05** (epic `weft-x38`, PR #103). `weft doctor`, `executor_live` liveness,
+> `reap`'s foreign-workspace guard, resolver oscillation cap, replan removed-pick I2 guard, and the
+> seam-11 `finish reconcile` re-verification all shipped; invariants I1–I4 hold by test. Retained as
+> the rationale record — the move from *choreography that works when watched* to *choreography that
+> reports when unwatched* is done.
+
 The 2026-07-03 deep review found the engine complete against its spec, with one structural gap:
 **weft has per-epic projection (`resume`) but no whole-warp health check.** Three
 finished-or-nearly-finished picks sat stranded in workspaces for 11 days — invisible to
@@ -108,15 +114,15 @@ unwatched*.
 
 Ordered by how directly it serves the target:
 
-- **The §3 unattended-trust set:** `doctor`, `executor_live`, oscillation guard, replan
-  supersede, seam-11 reconcile re-verification.
+- **The §3 unattended-trust set** — **✓ landed 2026-07-05** (`weft-x38` / #103): `doctor`,
+  `executor_live`, oscillation guard, replan supersede, seam-11 reconcile re-verification.
 - **Self-dogfood:** the meta-loop (exit criterion 1), plus the deferred re-runnable dogfood
   harness and the prompt↔verb drift guard (seam 10 §8).
 - **Onboard-readiness for fovea:** whatever `weft onboard` hits on a real repo that isn't weft —
   unknown-unknowns are the point of exit criterion 2.
-- **A warp-encoded plan:** the deferred scope above lives in seam prose only — zero beads track it
-  (2026-07-03 review finding). Materializing it into the warp is itself the first work item
-  (§7.3); after that, this section shrinks to milestone-level pointers.
+- **A warp-encoded plan** — **✓ done** (§7.3): the §3 scope was materialized into epic `weft-x38`
+  and drained to completion (#103). The live deltas are now self-dogfood (exit criterion 1) and
+  fovea onboard-readiness (exit criterion 2).
 - **Pulled-by-need infra:** golangci-lint; multi-arch/signing/Homebrew (seam 8 §8); config schema
   refinements (`**` globs, per-workspace conflict-marker style); the warp-plan JSON Schema
   (deferred until a third-party authoring surface exists, seam 9); non-Claude host runtimes
@@ -159,11 +165,10 @@ Ordered by how directly it serves the target:
    from its RED test; PR #89), then cut v0.2.1 (PR #74). Housekeeping debt to zero.
 2. **Honest docs.** This pair lands; `design.md` + seam headers refreshed; CLAUDE.md carve-out;
    legacy-tree decision enacted.
-3. **Encode the plan.** Materialize §5's deferred scope into the warp (parked priorities are
-   fine — `bd ready` must reflect what the project owes itself) and open the hardening epic: the
-   first open epic since `weft-ccy` closed.
-4. **Unattended-trust milestone (§3).** Exit test: kill an executor mid-pick and strand a
-   workspace — one command surfaces both.
+3. **✓ Encode the plan.** Materialized §5's deferred scope into epic `weft-x38` (the first open
+   epic since `weft-ccy` closed); drained in step 4.
+4. **✓ Unattended-trust milestone (§3).** Landed 2026-07-05 (epic `weft-x38`, PR #103; 9 picks,
+   invariants I1–I4 by test). **← steps 1–4 done; step 5 is next.**
 5. **Weft weaves weft.** First real self-hosted feature through the full loop; fix what it breaks;
    retire this doc pair onto the warp.
 6. **Onboard fovea.** Exit criterion 2; fovea's interim cadence retires too.
