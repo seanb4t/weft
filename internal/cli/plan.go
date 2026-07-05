@@ -232,8 +232,12 @@ func planPreviewText(mode string, wp plan.WarpPlan, d plan.Derivation) string {
 // for new picks via bd dep add (bd import ignores the JSONL parent field —
 // verified 2026-06-10), (3) post-import read-back to verify authored fields
 // round-tripped (seam 9 §7), (4) DeferredEdge wiring for edges touching a new
-// pick via bd dep add --type blocks (seam-2 §8). Removed-pick supersede remains
-// a §8 open sub-seam.
+// pick via bd dep add --type blocks (seam-2 §8), (5) removed-pick enactment:
+// OPEN removed refs are closed with an audit reason after edge wiring, while a
+// live replan that would drop an in_progress or closed pick hard-fails BEFORE
+// any bd import (invariant I2, ADR weft-0pq) — woven or landed work is never
+// silently dropped. bd supersede is not used: it requires --with <new>, and a
+// replan diff carries no successor mapping.
 func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation, epic string, dryRun bool) error {
 	existing, err := a.warpRefMap(epic)
 	if err != nil {
@@ -243,11 +247,26 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 	if err != nil {
 		return exit.Hardf("build re-plan payload: %v", err)
 	}
+	// I2 (ADR weft-0pq): a LIVE replan can never silently drop work. The
+	// classifier fails CLOSED — only an "open" pick is removable, so any removed
+	// ref with a non-open status (in_progress, closed, blocked, hooked, deferred,
+	// or any unknown/future state) lands in RemovedBlocked. If any is present,
+	// hard-fail BEFORE any bd import — no import, no edge wiring, no close.
+	// Dry-run reports both classifications (below) without mutating.
+	if !dryRun && len(rp.RemovedBlocked) > 0 {
+		parts := make([]string, len(rp.RemovedBlocked))
+		for i, ref := range rp.RemovedBlocked {
+			parts[i] = fmt.Sprintf("%s (%s)", ref, existing[ref].Status)
+		}
+		return exit.Hardf("re-plan drops %d pick(s) that are not open [%s] — a live replan can only remove open picks; any other status (in_progress, closed, blocked, hooked, deferred, or unknown) blocks to avoid silently dropping work (I2); express supersede intent against open picks only",
+			len(rp.RemovedBlocked), strings.Join(parts, ", "))
+	}
 	warnings := []string{} // vacuously empty for dry-run (no bd call); present for envelope-shape stability
 	if dryRun {
 		data := map[string]any{
 			"dry_run": true, "mode": "upsert", "epic": epic,
 			"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
+			"removed_blocked": rp.RemovedBlocked,
 			// applied_edges: same key as live; on dry-run these are the edges that WILL be wired post-import.
 			"applied_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
 			"warnings": warnings,
@@ -334,10 +353,32 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 			return exit.Hardf("re-plan applied but edge %s->%s could not be wired (edge %d/%d; %d already wired): %s — the warp is incomplete; investigate", e.From, e.To, i+1, len(rp.DeferredEdges), i, strings.TrimSpace(dep.Stderr))
 		}
 	}
+	// Enact removed-pick closure (seam 2 §8): every OPEN removed ref is closed
+	// with an audit reason, AFTER edge wiring so the warp's structure is settled
+	// first. Blocked removals (in_progress/closed) never reach here — the I2 guard
+	// above aborts a live replan before any bd import. Ids resolve from the
+	// pre-import ref map: removed refs are absent from the plan, so they are not
+	// in rp.Expect / the post-import readback zip. A close failure leaves the warp
+	// inconsistent (import applied, removal not enacted): hard.
+	for i, ref := range rp.Removed {
+		id := existing[ref].ID
+		if id == "" {
+			return exit.Hardf("re-plan applied but removed ref %q (removal %d/%d) has no resolvable bead id to close — the warp is incomplete; investigate", ref, i+1, len(rp.Removed))
+		}
+		reason := fmt.Sprintf("removed by replan of %s (was %s%s)", epic, plan.RefLabelPrefix, ref)
+		cl, err := run.BD(a.Runner, "close", id, "-r", reason)
+		if err != nil {
+			return exit.Hardf("re-plan applied but bd close for removed pick %s (%s) could not run: %v — the warp is incomplete; investigate", id, ref, err)
+		}
+		if cl.Code != 0 {
+			return exit.Hardf("re-plan applied but bd close for removed pick %s (%s) failed: %s — the warp is incomplete; investigate", id, ref, strings.TrimSpace(cl.Stderr))
+		}
+	}
 	data := map[string]any{
 		"mode": "upsert", "epic": epic,
 		"updated": rp.Updated, "created": rp.Created, "removed": rp.Removed,
-		"applied_edges": rp.DeferredEdges, "tolerated": d.Tolerated,
+		"removed_blocked": rp.RemovedBlocked,
+		"applied_edges":   rp.DeferredEdges, "tolerated": d.Tolerated,
 		"bd_output": strings.TrimSpace(res.Stdout), "warnings": warnings,
 		"verification": []string{},
 	}
@@ -431,7 +472,17 @@ func replanText(epic string, rp plan.Replan, dry bool) string {
 			len(rp.DeferredEdges), verb, strings.Join(parts, ", "))
 	}
 	if len(rp.Removed) > 0 {
-		fmt.Fprintf(&b, "  removed ref(s) need supersede (§8): %s\n", strings.Join(rp.Removed, ", "))
+		verb := "closed (removed by replan)"
+		if dry {
+			verb = "will close (removed by replan)"
+		}
+		fmt.Fprintf(&b, "  %d removed ref(s) %s: %s\n", len(rp.Removed), verb, strings.Join(rp.Removed, ", "))
+	}
+	if len(rp.RemovedBlocked) > 0 {
+		// Only reachable on dry-run: a live replan hard-fails before this text
+		// renders when RemovedBlocked is non-empty (I2).
+		fmt.Fprintf(&b, "  %d removed ref(s) BLOCKED — in_progress/closed; a live replan hard-fails (I2): %s\n",
+			len(rp.RemovedBlocked), strings.Join(rp.RemovedBlocked, ", "))
 	}
 	if dry {
 		b.WriteString("  (no mutation — re-run without --dry-run to upsert)")

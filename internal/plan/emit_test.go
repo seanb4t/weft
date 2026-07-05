@@ -130,10 +130,49 @@ func TestBuildReplanMatchedEdgeBecomesDependency(t *testing.T) {
 func TestBuildReplanRemovedRefs(t *testing.T) {
 	wp := WarpPlan{Epic: Epic{Title: "E"}, Picks: []Pick{{Ref: "a", Title: "A", Description: "a"}}}
 	d := Derive(wp.Picks, nil, 1)
-	existing := map[string]ExistingBead{"a": {ID: "e.1"}, "old": {ID: "e.9"}}
+	// "old" is absent from the plan and OPEN, so it is removable (fail-closed
+	// classification: only an explicit open status lands in rp.Removed).
+	existing := map[string]ExistingBead{"a": {ID: "e.1", Status: "open"}, "old": {ID: "e.9", Status: "open"}}
 	rp, _ := BuildReplan(wp, d, "e", existing)
 	if !reflect.DeepEqual(rp.Removed, []string{"old"}) {
 		t.Errorf("removed = %v", rp.Removed)
+	}
+}
+
+// TestBuildReplanClassifiesRemovedByStatus pins the removed-ref classification
+// switch (seam 2 §8, I2) as FAIL-CLOSED: a removed ref is removable ONLY when
+// its live status is exactly "open". Every other status — in_progress/closed
+// (woven or landed work), bd's other WIP/hold states (hooked, blocked), and any
+// empty/unknown/future status — lands in rp.RemovedBlocked so a live replan
+// hard-fails rather than silently bd-close it. The hooked/blocked/unknown/empty
+// cases are the regression guards: a destructive close must never fire on a
+// status the classifier does not explicitly recognize as safe. Both slices are
+// []-initialized and sorted.
+func TestBuildReplanClassifiesRemovedByStatus(t *testing.T) {
+	wp := WarpPlan{Epic: Epic{Title: "E"}, Picks: []Pick{{Ref: "keep", Title: "K", Description: "k"}}}
+	d := Derive(wp.Picks, nil, 1)
+	existing := map[string]ExistingBead{
+		"keep":       {ID: "e.0", Status: "open"},        // in the plan — neither removed nor blocked
+		"gone-b":     {ID: "e.1", Status: "open"},        // removed, open        -> Removed
+		"gone-a":     {ID: "e.2", Status: "open"},        // removed, open        -> Removed (sorted before gone-b)
+		"woven":      {ID: "e.3", Status: "in_progress"}, // removed, WIP         -> RemovedBlocked
+		"landed":     {ID: "e.4", Status: "closed"},      // removed, landed      -> RemovedBlocked
+		"hooked":     {ID: "e.5", Status: "hooked"},      // removed, claimed WIP -> RemovedBlocked (fail-closed)
+		"held":       {ID: "e.6", Status: "blocked"},     // removed, on hold     -> RemovedBlocked (fail-closed)
+		"mystery":    {ID: "e.7", Status: "weird"},       // removed, unknown     -> RemovedBlocked (fail-closed)
+		"statusless": {ID: "e.8", Status: ""},            // removed, empty       -> RemovedBlocked (fail-closed)
+	}
+	rp, err := BuildReplan(wp, d, "e", existing)
+	if err != nil {
+		t.Fatalf("BuildReplan: %v", err)
+	}
+	if !reflect.DeepEqual(rp.Removed, []string{"gone-a", "gone-b"}) {
+		t.Errorf("Removed (open refs only, sorted) = %v, want [gone-a gone-b]", rp.Removed)
+	}
+	// Every non-open removed ref must block; the sorted slice below is the check.
+	wantBlocked := []string{"held", "hooked", "landed", "mystery", "statusless", "woven"}
+	if !reflect.DeepEqual(rp.RemovedBlocked, wantBlocked) {
+		t.Errorf("RemovedBlocked (all non-open refs, sorted) = %v, want %v", rp.RemovedBlocked, wantBlocked)
 	}
 }
 
