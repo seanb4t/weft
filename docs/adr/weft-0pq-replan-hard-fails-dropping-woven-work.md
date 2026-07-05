@@ -1,8 +1,7 @@
----
-title: "Replan hard-fails on dropping woven work"
----
 <!-- markdownlint-disable MD013 -->
 <!-- adr-render: source=bd:weft-0pq; do not edit manually; use `/adr update weft-0pq` -->
+
+# Replan hard-fails on dropping woven work
 
 **Date:** 2026-07-04
 **Status:** Accepted
@@ -15,7 +14,7 @@ title: "Replan hard-fails on dropping woven work"
 
 ## Decision
 
-An open removed pick is closed with an audit reason naming the replan (`bd close <id> -r "removed by replan of <epic> (was weft-ref:<ref>)"`). A removed pick that is `in_progress` or `closed` hard-fails the replan (exit 2, before any mutation): a plan can never silently drop woven or landed work (invariant I2).
+An open removed pick is closed with an audit reason naming the replan (`bd close <id> -r "removed by replan of <epic> (was weft-ref:<ref>)"`). A removed pick with any non-`open` status — `in_progress`, `closed`, `blocked`, `hooked`, `deferred`, `pinned`, or any unknown/future status — hard-fails the replan (exit 2, before any mutation): a plan can never silently drop woven or landed work (invariant I2). This fail-closed classification mirrors `reap.go`'s `beadStatus` fail-safe posture: only a status the code positively recognizes as safe to close (`open`) is removable; every other value, known or not, blocks.
 
 ## Rationale
 
@@ -25,7 +24,7 @@ An open removed pick is closed with an audit reason naming the replan (`bd close
 
 ## Alternatives Considered
 
-- **Close-with-note for open picks + hard-fail for in_progress/closed picks (chosen):** preserves audit trail without inventing a nonexistent successor; makes silent drops structurally impossible.
+- **Close-with-note for open picks + hard-fail for any non-open pick (chosen):** preserves audit trail without inventing a nonexistent successor; makes silent drops structurally impossible.
 - **Silent report only — status quo (rejected):** a plan can orphan in-progress or landed work with no signal.
 - **`bd supersede` as the removal mechanism (rejected):** requires `--with <new>`; a replan diff cannot identify a successor ref.
 

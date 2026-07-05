@@ -761,18 +761,20 @@ Expected: FAIL — `RemovedBlocked` undefined; no close calls issued.
 
 ```go
 		switch existing.Status {
-		case "in_progress", "closed":
-			rp.RemovedBlocked = append(rp.RemovedBlocked, ref)
-		default: // open (and any future pre-work status): removable
+		case "open":
 			rp.Removed = append(rp.Removed, ref)
+		default: // in_progress, closed, blocked, hooked, deferred, pinned, or any unknown/future status: not safe to close
+			rp.RemovedBlocked = append(rp.RemovedBlocked, ref)
 		}
 ```
+
+Fail-closed, not fail-open: only `open` is a status the code positively recognizes as safe to close on removal (mirrors `reap.go`'s `beadStatus` fail-safe posture) — every other, including any status not yet invented, blocks rather than silently closing woven or landed work.
 
 `internal/cli/plan.go` `planReplan`: immediately after `BuildReplan` (`:242`):
 
 ```go
 	if !dryRun && len(rp.RemovedBlocked) > 0 {
-		return exit.Hardf("re-plan drops %d pick(s) with woven or landed work (%s) — a plan cannot remove in_progress or closed picks (I2); supersede intent must be expressed against open picks only",
+		return exit.Hardf("re-plan drops %d pick(s) that are not open [%s] — a live replan can only remove open picks; any other status (in_progress, closed, blocked, hooked, deferred, or unknown) blocks to avoid silently dropping work (I2); express supersede intent against open picks only",
 			len(rp.RemovedBlocked), strings.Join(rp.RemovedBlocked, ", "))
 	}
 ```
@@ -788,7 +790,7 @@ Expected: PASS (the integration replan test exercises the live path against pinn
 
 `jj commit -m "feat(plan): enact removed-pick closure on replan; hard-fail dropping woven work (seam 2 §8, I2)"`
 
-**Acceptance:** open removals closed with audit reason; in_progress/closed removals abort live replans pre-import (I2); dry-run classifies both without mutating; envelopes carry `removed_blocked` on all paths.
+**Acceptance:** open removals closed with audit reason; any non-open removal (in_progress, closed, blocked, hooked, deferred, pinned, or unknown) aborts live replans pre-import (I2, fail-closed); dry-run classifies both without mutating; envelopes carry `removed_blocked` on all paths.
 
 ---
 
