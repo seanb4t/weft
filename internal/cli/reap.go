@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/seanb4t/weft/internal/exit"
+	"github.com/seanb4t/weft/internal/liveness"
 	"github.com/seanb4t/weft/internal/run"
 	"github.com/seanb4t/weft/internal/workspace"
 	"github.com/spf13/cobra"
@@ -19,10 +21,15 @@ import (
 
 func (a *App) newReapCmd() *cobra.Command {
 	var epic string
+	var dryRun bool
 	c := &cobra.Command{
 		Use:   "reap",
 		Short: "Reconcile jj workspaces against bead state; reap orphans (spec §5)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			threshold, err := a.Config.LivenessThreshold()
+			if err != nil {
+				return exit.Invocationf("[liveness] threshold: %v", err)
+			}
 			root, err := jjRoot(a.Runner)
 			if err != nil {
 				return err
@@ -35,7 +42,12 @@ func (a *App) newReapCmd() *cobra.Command {
 				return exit.Hardf("jj workspace list failed: %s", strings.TrimSpace(res.Stderr))
 			}
 			wtRoot := workspace.Root(root, a.Config.Workspace.Root)
+			// Envelope keys are always []-initialized (never null) — seam 9
+			// discipline. reaped/wouldReap carry bead-ids; foreign carries the raw
+			// workspace names of skipped non-weft workspaces (doctor reports them).
 			reaped := []string{}
+			wouldReap := []string{}
+			foreign := []string{}
 			for _, name := range splitTrimLines(res.Stdout) {
 				if name == "default" {
 					continue // never reap the orchestrator's own workspace
@@ -43,32 +55,56 @@ func (a *App) newReapCmd() *cobra.Command {
 				bead, _ := workspace.Resolve(name) // kind-aware: strips -resolve, desanitizes
 				// --epic scope: bead-ids are hierarchical, so a descendant of the
 				// epic has it as a dotted prefix (e.g. weft-hjx.1.3 under weft-hjx.1).
-				if epic != "" && bead != epic && !strings.HasPrefix(bead, epic+".") {
+				if !scopedToEpic(epic, bead) {
 					continue
 				}
 				status, err := beadStatus(a.Runner, bead)
 				if err != nil {
 					return err
 				}
-				// v1: the executor_live guard (spec §5/§10) is deferred. Any
-				// in_progress bead is kept — including a CRASHED executor whose
-				// bead is still in_progress (it is over-retained, not reaped,
-				// until the liveness guard lands). Everything else (closed / open
-				// / genuinely-missing) is an orphan and reaped; forget never loses
-				// sealed work (spec §2).
-				if status == "in_progress" {
+				// dir is the sole declaration (moved above the path-safety guard so
+				// it feeds the foreign and liveness checks).
+				dir := filepath.Join(wtRoot, name)
+				if status == "" && !dirExists(dir) {
+					// Foreign: resolves to no bead AND lives outside the worktrees
+					// root (weft creates every workspace it owns under wtRoot).
+					// Forgetting it would break whoever owns it (e.g. a Claude Code
+					// worktree-agent-* session). Doctor reports these; reap skips.
+					// A beadless workspace whose dir IS under wtRoot is a genuine
+					// weft orphan (its bead was deleted) and still falls through to
+					// reap below.
+					foreign = append(foreign, name)
 					continue
+				}
+				// executor_live decision table (spec §5/§10, invariant I3): an
+				// in_progress bead is kept only while its executor is LIVE; an
+				// in_progress bead gone quiet past the threshold is a CRASHED
+				// executor and falls through to reap. Everything else (closed /
+				// open / beadless-with-dir) is an orphan; forget never loses sealed
+				// work (spec §2).
+				if status == "in_progress" {
+					last, err := liveness.LastActivity(a.Runner, name, dir)
+					if err != nil {
+						return exit.Hardf("liveness probe for %s: %v", name, err)
+					}
+					if liveness.Live(last, time.Now(), threshold) {
+						continue // busy — the seam 3 §5 authoritative guard
+					}
+					// crashed: in_progress but dead past threshold → fall through to reap
 				}
 				// Path-safety guard (spec §5): never RemoveAll outside the
 				// worktrees root. A jj workspace name carrying "/" or ".." would
 				// otherwise let the join escape wtRoot and delete unrelated dirs.
-				dir := filepath.Join(wtRoot, name)
 				safe, err := workspace.ContainsResolved(wtRoot, dir)
 				if err != nil {
 					return exit.Hardf("refusing to reap %q: cannot resolve path for containment check: %v", name, err)
 				}
 				if !safe {
 					return exit.Hardf("refusing to reap %q: resolves outside worktrees root %s", name, wtRoot)
+				}
+				if dryRun {
+					wouldReap = append(wouldReap, bead) // report only, mutate nothing
+					continue
 				}
 				if res, err := run.JJ(a.Runner, "workspace", "forget", name); err != nil {
 					return exit.Hardf("jj workspace forget could not run: %v", err)
@@ -80,11 +116,16 @@ func (a *App) newReapCmd() *cobra.Command {
 				}
 				reaped = append(reaped, bead) // emit the bead-id, matching shed.isolate/cleanup
 			}
-			data := map[string]any{"reaped": reaped}
-			return Emit(cmd, "reap", data, fmt.Sprintf("reaped %d orphan workspace(s)", len(reaped)))
+			data := map[string]any{"reaped": reaped, "would_reap": wouldReap, "foreign": foreign, "dry_run": dryRun}
+			summary := fmt.Sprintf("reaped %d orphan workspace(s)", len(reaped))
+			if dryRun {
+				summary = fmt.Sprintf("dry-run: would reap %d orphan workspace(s)", len(wouldReap))
+			}
+			return Emit(cmd, "reap", data, summary)
 		},
 	}
 	c.Flags().StringVar(&epic, "epic", "", "scope reconciliation to descendants of this epic")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "report workspaces that would be reaped without mutating anything")
 	return c
 }
 

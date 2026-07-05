@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/seanb4t/weft/internal/exit"
 )
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {
@@ -121,5 +124,120 @@ func TestPlanOverlapMaxNegativeClampsToZero(t *testing.T) {
 	}
 	if cfg.PlanOverlapMax() != 0 {
 		t.Errorf("negative overlap_max must clamp to 0 (serialize on any non-structural overlap), got %d", cfg.PlanOverlapMax())
+	}
+}
+
+// TestMaxResolveAttemptsConfig verifies the [conflict] max_resolve_attempts cap
+// (spec I4): default 3 when unset, an explicit value honored, and a configured
+// value < 1 rejected as an invocation error — a cap must never silently invert
+// to no-cap (the bd-ready-limit-0 gotcha class).
+func TestMaxResolveAttemptsConfig(t *testing.T) {
+	// Unset -> default.
+	var c Config
+	got, err := c.MaxResolveAttempts()
+	if err != nil {
+		t.Fatalf("unset must not error: %v", err)
+	}
+	if got != DefaultMaxResolveAttempts {
+		t.Errorf("unset MaxResolveAttempts() = %d, want default %d", got, DefaultMaxResolveAttempts)
+	}
+
+	// Explicit value honored.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[conflict]\nmax_resolve_attempts = 5\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	got, err = cfg.MaxResolveAttempts()
+	if err != nil {
+		t.Fatalf("explicit 5 must not error: %v", err)
+	}
+	if got != 5 {
+		t.Errorf("MaxResolveAttempts() = %d, want 5", got)
+	}
+
+	// < 1 rejected as an invocation error (exit 1): a cap must never invert to no-cap.
+	zero := 0
+	var c2 Config
+	c2.Conflict.MaxResolveAttempts = &zero
+	if _, err := c2.MaxResolveAttempts(); err == nil {
+		t.Fatal("max_resolve_attempts = 0 must be rejected")
+	} else if code := exit.Code(err); code != 1 {
+		t.Errorf("max_resolve_attempts = 0 must be an invocation error (exit 1), got exit %d", code)
+	}
+}
+
+func TestLivenessThresholdDefaultAndParse(t *testing.T) {
+	var c Config
+	d, err := c.LivenessThreshold()
+	if err != nil || d != 45*time.Minute {
+		t.Errorf("unset threshold: got %v, %v; want 45m, nil", d, err)
+	}
+	c.Liveness.Threshold = "90m"
+	d, err = c.LivenessThreshold()
+	if err != nil || d != 90*time.Minute {
+		t.Errorf("90m: got %v, %v", d, err)
+	}
+	c.Liveness.Threshold = "not-a-duration"
+	if _, err = c.LivenessThreshold(); err == nil {
+		t.Error("malformed threshold must error")
+	}
+}
+
+// TestLivenessThresholdConfig verifies the [liveness] threshold guard (spec
+// I3): default 45m when unset, an explicit value honored, and a non-positive
+// configured value (zero or negative) rejected as an invocation error — a
+// non-positive threshold marks every workspace dead and reap would destroy
+// every live in-progress executor (the bd-ready-limit-0 gotcha class).
+func TestLivenessThresholdConfig(t *testing.T) {
+	// Unset -> default.
+	var c Config
+	got, err := c.LivenessThreshold()
+	if err != nil {
+		t.Fatalf("unset must not error: %v", err)
+	}
+	if got != DefaultLivenessThreshold {
+		t.Errorf("unset LivenessThreshold() = %v, want default %v", got, DefaultLivenessThreshold)
+	}
+
+	// Explicit value honored.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[liveness]\nthreshold = \"90m\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	got, err = cfg.LivenessThreshold()
+	if err != nil {
+		t.Fatalf("explicit 90m must not error: %v", err)
+	}
+	if got != 90*time.Minute {
+		t.Errorf("LivenessThreshold() = %v, want 90m", got)
+	}
+
+	// "0s" rejected as an invocation error (exit 1): a non-positive threshold
+	// marks every workspace dead.
+	var c2 Config
+	c2.Liveness.Threshold = "0s"
+	if _, err := c2.LivenessThreshold(); err == nil {
+		t.Fatal("threshold = \"0s\" must be rejected")
+	} else if code := exit.Code(err); code != 1 {
+		t.Errorf("threshold = \"0s\" must be an invocation error (exit 1), got exit %d", code)
+	}
+
+	// Negative rejected as an invocation error.
+	var c3 Config
+	c3.Liveness.Threshold = "-5m"
+	if _, err := c3.LivenessThreshold(); err == nil {
+		t.Fatal("threshold = \"-5m\" must be rejected")
+	} else if code := exit.Code(err); code != 1 {
+		t.Errorf("threshold = \"-5m\" must be an invocation error (exit 1), got exit %d", code)
 	}
 }

@@ -12,8 +12,18 @@ package weave_test
 // proves the merge-commit reconcile path (seam-6 §6.1 step 3) does not drag a
 // parked escalated sibling into the rebase. TestJJLogParsersTolerateSnapshotWarning
 // additionally guards the jj-log parser helpers against jj's working-copy
-// snapshot warnings under CI. Each test's own godoc documents its fixture,
-// assertions, and rationale.
+// snapshot warnings under CI.
+//
+// Bead weft-x38.4 closes the seam-11 §7 verification delta: the two tests above
+// prove the CLEAN parked/escalated sibling case, so TestReconcileVerbExcludesConflictedParkedSibling
+// and TestFinishOpenCollapseWithConflictedEscalatedSibling extend them to the
+// two untested dimensions — the parked sibling being actually CONFLICTED, and
+// (for reconcile) driving the real `weft finish reconcile` verb end-to-end with
+// only gh intercepted. Both pass as-is: conflict state is an in-commit property
+// orthogonal to the ancestry graph the rebases select on, so the topology risk
+// is disproven-by-test, not fixed.
+//
+// Each test's own godoc documents its fixture, assertions, and rationale.
 
 import (
 	"encoding/json"
@@ -712,5 +722,376 @@ func writeFileIn(t *testing.T, dir, filename, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s/%s: %v", dir, filename, err)
+	}
+}
+
+// inConflicts reports whether changeID is a member of jj's conflicts() set in
+// repoDir. Used to assert a parked/escalated sibling stays first-class conflicted
+// across a reconcile/collapse (a silent conflict resolution would be a defect —
+// unreviewed work must never be absorbed). Tolerant of jj's snapshot warning
+// lines via changeIDLines, mirroring the other parsers in this file.
+func inConflicts(t *testing.T, repoDir, changeID string) bool {
+	t.Helper()
+	cmd := exec.Command("jj", "--no-pager", "log", "-r", "conflicts()", "--no-graph",
+		"-T", `change_id.short(12) ++ "\n"`)
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("jj log -r conflicts() in %s: %v\n%s", repoDir, err, out)
+	}
+	for _, l := range changeIDLines(strings.TrimSpace(string(out))) {
+		if l == changeID {
+			return true
+		}
+	}
+	return false
+}
+
+// writeFakeGHReconcile writes a fake `gh` binary for the reconcile verb. It
+// intercepts exactly the gh calls `weft finish reconcile` makes and nothing
+// else: `pr view` (the MERGED safety gate, spec §6.1) returns state=MERGED, and
+// the deleteRemoteBranch pair (`repo view` for the slug + `api -X DELETE` for
+// the ref) returns benign success. jj is NOT faked — it runs for real against
+// the scratch repo's bare origin, so the topology assertions test real rebases.
+func writeFakeGHReconcile(t *testing.T, dir string) string {
+	t.Helper()
+	script := `#!/bin/sh
+# Fake gh for finish-reconcile topology test.
+# Routes only the commands reconcile calls beyond jj.
+args="$*"
+case "$args" in
+  pr\ view*)        echo '{"state":"MERGED"}'; exit 0 ;;
+  repo\ view*)      echo '{"nameWithOwner":"fake/repo"}'; exit 0 ;;
+  api\ -X\ DELETE*) exit 0 ;;
+  *)                exit 0 ;;
+esac
+`
+	ghPath := filepath.Join(dir, "gh")
+	if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake gh (reconcile): %v", err)
+	}
+	return ghPath
+}
+
+// TestReconcileVerbExcludesConflictedParkedSibling drives the REAL
+// `weft finish reconcile <epic>` verb end-to-end (gh intercepted, jj real) and
+// proves its merge-commit rebase (`jj rebase -b @ -o main --skip-emptied`,
+// finish.go ~488) does not drag a parked change that is actually CONFLICTED.
+// This is the weft-x38.4 delta over TestReconcileMergeBranchLeavesParkedSiblingUntouched,
+// which proves the same for a CLEAN parked sibling by replaying the raw jj
+// command; here (a) the sibling E is a first-class jj conflict and (b) the whole
+// verb runs (prState gate → jj git fetch → mergeStyle → rebase → bookmark/branch
+// cleanup), not just the rebase.
+//
+// Fixture (a true merge-commit topology plus a conflicted parked branch):
+//
+//	base ← X ← E          (parked side branch; E records an in-commit conflict)
+//	base ← S1 ← S2        (the epic's PR stack; epic bookmark → S2, pushed)
+//	base ← M1             (a mainline advance)
+//	M1, S2 ← M            (the merge commit; main bookmark → M, pushed)
+//	S2 ← @                (a NON-EMPTY working copy above the stack)
+//
+// An in-commit jj conflict cannot coexist with the clean base as E's sole parent
+// (a lone `add` never conflicts), so E is parked one hop out on X: E's stored
+// change is the conflict between "add collide.txt=E" and X's "collide.txt". This
+// is the conflicted analogue of the clean test's base-sibling PARKED; the
+// invariant under test is identical — reconcile must never relocate E.
+//
+// Because epic@origin (S2) is an ancestor of main@origin (M), mergeStyle returns
+// merge_commit and the rebase path runs. `jj rebase -b @` is `-s roots(main..@)`;
+// here roots(main..@)={@} (S1/S2 are already ancestors of main), so only @ moves
+// onto M — E, off on its own branch, is never in the rebase set regardless of its
+// conflict state. The test proves that empirically against the real verb.
+func TestReconcileVerbExcludesConflictedParkedSibling(t *testing.T) {
+	requireSubstrate(t)
+	r := newScratchRepo(t)
+
+	// base == trunk == main (bookmark), already pushed to origin by newScratchRepo.
+	baseChID := jjChangeIDAt(t, r.root, "main")
+
+	// --- Parked side branch off base: X (clean) ← E (conflicted) ---
+	r.mustJJ(t, "new", baseChID)
+	writeFileIn(t, r.root, "collide.txt", "l1-X\nl2\n")
+	r.mustJJ(t, "describe", "-m", "X: conflict inducer (base sibling)")
+	xChID := jjChangeIDAt(t, r.root, "@")
+
+	r.mustJJ(t, "new", baseChID)
+	writeFileIn(t, r.root, "collide.txt", "l1-E\nl2\n")
+	r.mustJJ(t, "describe", "-m", "E: parked escalated pick (conflicted)")
+	eChID := jjChangeIDAt(t, r.root, "@")
+	// Rebase E onto X: E's `add collide.txt` collides with X's version, so jj
+	// records an in-commit conflict in E and proceeds (the same add/add conflict
+	// mechanic as conflict_proof_test.go, here induced by a raw jj rebase rather
+	// than shed integrate). E's change-id is preserved; its parent becomes X.
+	r.mustJJ(t, "rebase", "-r", eChID, "-o", xChID)
+
+	// --- PR stack S1 ← S2 off base (the epic's landed line) ---
+	r.mustJJ(t, "new", baseChID)
+	writeFileIn(t, r.root, "stack1.txt", "stack commit 1\n")
+	r.mustJJ(t, "describe", "-m", "feat: stack commit 1")
+	s1ChID := jjChangeIDAt(t, r.root, "@")
+	r.mustJJ(t, "new", s1ChID)
+	writeFileIn(t, r.root, "stack2.txt", "stack commit 2\n")
+	r.mustJJ(t, "describe", "-m", "feat: stack commit 2")
+	s2ChID := jjChangeIDAt(t, r.root, "@")
+
+	// epic bookmark points at the stack tip (what finish open would have pushed).
+	r.mustJJ(t, "bookmark", "create", "epicbr", "-r", s2ChID)
+
+	// --- mainline advance M1 + merge commit M (parents M1, S2) ---
+	r.mustJJ(t, "new", baseChID)
+	writeFileIn(t, r.root, "mainline.txt", "mainline advance\n")
+	r.mustJJ(t, "describe", "-m", "chore: mainline advance M1")
+	m1ChID := jjChangeIDAt(t, r.root, "@")
+	r.mustJJ(t, "new", m1ChID, s2ChID)
+	writeFileIn(t, r.root, "merge_marker.txt", "merge commit M\n")
+	r.mustJJ(t, "describe", "-m", "merge: PR stack into mainline (M)")
+	mChID := jjChangeIDAt(t, r.root, "@")
+	r.mustJJ(t, "bookmark", "set", "main", "-r", mChID)
+
+	// Publish both refs so the real verb sees a merged topology: epic@origin=S2 is
+	// an ancestor of main@origin=M, so mergeStyle detects merge_commit. Neither
+	// pushed bookmark reaches the conflicted E, so jj does not try to push it.
+	r.mustJJ(t, "git", "push", "--bookmark", "epicbr")
+	r.mustJJ(t, "git", "push", "--bookmark", "main")
+
+	// --- working copy @ as a NON-EMPTY child of S2 (production always has one) ---
+	r.mustJJ(t, "new", s2ChID)
+	writeFileIn(t, r.root, "wc.txt", "working copy content\n")
+	r.mustJJ(t, "describe", "-m", "wip: working copy above stack")
+	wcChID := jjChangeIDAt(t, r.root, "@")
+
+	// --- Pre-reconcile sanity: E is parked on X and first-class conflicted ---
+	if p := jjLogParents(t, r.root, eChID); p[eChID] != xChID {
+		t.Fatalf("pre-reconcile: E %q parent = %q, want X %q", eChID, p[eChID], xChID)
+	}
+	if !inConflicts(t, r.root, eChID) {
+		t.Fatalf("pre-reconcile: E %q is not conflicted — the conflict recipe failed", eChID)
+	}
+
+	// --- Drive the REAL verb; only gh is faked, jj runs for real ---
+	fakeBinDir := t.TempDir()
+	writeFakeGHReconcile(t, fakeBinDir)
+	fakePATH := fakeBinDir + string(os.PathListSeparator) + os.Getenv("PATH")
+	env := r.runWeftWithEnv(t, "", []string{"PATH=" + fakePATH}, "finish", "reconcile", "epicbr")
+
+	// Envelope: reconcile took the merge-commit path (not squash/abandon).
+	if got := dataString(t, env.Data, "merge_style"); got != "merge_commit" {
+		t.Fatalf("reconcile merge_style = %q, want merge_commit: %s", got, env.Data)
+	}
+	if !dataBool(t, env.Data, "merged") {
+		t.Fatalf("reconcile merged = false, want true: %s", env.Data)
+	}
+	if dataBool(t, env.Data, "dry_run") {
+		t.Fatalf("reconcile dry_run = true, want false: %s", env.Data)
+	}
+
+	// --- NON-TRIVIALITY: the working copy was actually rebased onto the merge tip ---
+	// @ is non-empty so --skip-emptied cannot abandon it; a correct rebase onto
+	// main reparents it to M. This guards against a vacuous pass where nothing moved.
+	afterWC := jjLogParents(t, r.root, wcChID)
+	if _, ok := afterWC[wcChID]; !ok {
+		t.Fatalf("working copy %q vanished after reconcile — fixture or rebase is wrong", wcChID)
+	}
+	if afterWC[wcChID] != mChID {
+		t.Fatalf("working copy %q parent after reconcile = %q, want merge tip %q — rebase did not run onto main",
+			wcChID, afterWC[wcChID], mChID)
+	}
+
+	// --- The conflicted parked sibling E is untouched ---
+	after := jjLogParents(t, r.root, eChID)
+	if _, ok := after[eChID]; !ok {
+		t.Fatalf("conflicted parked E %q not found after reconcile — its change-id changed or it was abandoned", eChID)
+	}
+	if after[eChID] != xChID {
+		t.Fatalf("conflicted parked E %q parent after reconcile = %q, want unchanged X %q — reconcile dragged the parked sibling",
+			eChID, after[eChID], xChID)
+	}
+	if !inConflicts(t, r.root, eChID) {
+		t.Fatalf("conflicted parked E %q is no longer in conflicts() after reconcile — its conflict was silently resolved/absorbed", eChID)
+	}
+	// No live change may have E as a parent. Split parent lists so a merge commit
+	// that dragged E in as one of two parents ("X,E") is still caught.
+	for ch, pList := range jjLogParents(t, r.root, "all()") {
+		for _, p := range strings.Split(pList, ",") {
+			if p == eChID {
+				t.Fatalf("change %q has conflicted parked E %q as a parent after reconcile — E was dragged into the line", ch, eChID)
+			}
+		}
+	}
+}
+
+// TestFinishOpenCollapseWithConflictedEscalatedSibling is TestFinishOpenCollapseTopology
+// (:266) with one change: the escalated pick's woven change is made CONFLICTED
+// before finish open. It proves collapseClosedPicks (finish.go:90) leaves a
+// CONFLICTED escalated sibling parked and unmoved, exactly as the sibling test
+// proves for a clean one — the untested half of seam 11 §7's second bullet.
+//
+// A/B/C seal disjoint files, integrate as clean solo trunk() children, and land
+// (closed). ESC seals its own file and integrates clean; then a sibling commit K
+// carrying a colliding topo_esc.txt is created and ESC is rebased onto it,
+// recording an in-commit conflict in ESC (change-id preserved, parent becomes K).
+// An in-commit conflict cannot be produced while ESC stays a lone trunk() child
+// adding a fresh file, so "parked off the collapsed line" here means parked on
+// the side branch …←K←ESC — the load-bearing invariant is that collapse never
+// touches ESC. K is built on the harness's committed working-copy line (which
+// carries the live .beads Dolt DB) rather than as a fresh `jj new trunk()` child:
+// checking @ out onto a .beads-free tree would delete the DB from disk and break
+// finish open's bd list.
+//
+// collapseClosedPicks only rebases the CLOSED picks (A/B/C, read from bd); ESC is
+// never an argument to any jj command, so its conflict state cannot affect the
+// outcome. The test asserts A/B/C linearize onto trunk() while ESC keeps its
+// change-id, its parent (K), and its conflict, and is dragged into the line by
+// nothing.
+func TestFinishOpenCollapseWithConflictedEscalatedSibling(t *testing.T) {
+	requireSubstrate(t)
+	r := newScratchRepo(t)
+
+	epic := r.mustCreateEpic(t, "Conflicted-escalated topology epic")
+	pickA := r.mustCreateChild(t, epic, "feat: pick A", "tA")
+	pickB := r.mustCreateChild(t, epic, "feat: pick B", "tB")
+	pickC := r.mustCreateChild(t, epic, "feat: pick C", "tC")
+	pickESC := r.mustCreateChild(t, epic, "feat: pick ESC (escalated)", "tE")
+
+	wave := []string{pickA, pickB, pickC, pickESC}
+	r.runWeft(t, "", append([]string{"shed", "isolate"}, wave...)...)
+	r.sealWith(t, pickA, map[string]string{"topo_a.txt": "pick-A\n"})
+	r.sealWith(t, pickB, map[string]string{"topo_b.txt": "pick-B\n"})
+	r.sealWith(t, pickC, map[string]string{"topo_c.txt": "pick-C\n"})
+	// ESC seals its own disjoint file so integrate leaves it a clean solo trunk()
+	// child; the conflict is induced below (see the godoc — a lone add cannot
+	// conflict, so it must be forced against a colliding trunk() child).
+	r.sealWith(t, pickESC, map[string]string{"topo_esc.txt": "pick-ESC\n"})
+
+	r.runWeft(t, "", append([]string{"shed", "integrate"}, wave...)...)
+	r.runWeft(t, "", "pick", "land", pickA)
+	r.runWeft(t, "", "pick", "land", pickB)
+	r.runWeft(t, "", "pick", "land", pickC)
+	// Escalate ESC (human label) — stays open, so finish open reads only A/B/C.
+	r.mustBD(t, "update", pickESC, "--add-label", "human")
+	r.runWeft(t, "", "shed", "cleanup", pickA, pickB, pickC)
+	_ = exec.Command("jj", "--no-pager", "workspace", "forget", pickESC).Run()
+
+	escChange := r.changeIDFromLabel(t, pickESC)
+	if escChange == "" {
+		t.Fatal("escalated pick has no jj-change label — cannot assert topology")
+	}
+	chA := r.changeIDFromLabel(t, pickA)
+	chB := r.changeIDFromLabel(t, pickB)
+	chC := r.changeIDFromLabel(t, pickC)
+	if chA == "" || chB == "" || chC == "" {
+		t.Fatalf("closed picks missing jj-change labels: A=%q B=%q C=%q", chA, chB, chC)
+	}
+
+	// Commit the live harness state so a jj commit carries the .beads Dolt DB, and
+	// keep @ on that line. Moving @ onto a commit whose tree lacks .beads (e.g.
+	// `jj new trunk()`) would delete the live DB from disk and break finish open's
+	// bd list; this mirrors TestFinishOpenCollapseTopology's single pre-finish commit.
+	r.mustJJ(t, "commit", "-m", "chore: finish-topology test state")
+
+	// --- Make ESC CONFLICTED while it stays off the closed line ---
+	// Build K as a child of the current .beads-carrying @ (write a colliding
+	// topo_esc.txt into the empty change and describe it), then rebase ESC onto K:
+	// ESC's `add topo_esc.txt` collides with K's version, so jj records an
+	// in-commit conflict in ESC (change-id preserved, parent becomes K). Finally
+	// `jj new K` leaves @ an EMPTY child of K, still on the .beads line — clean for
+	// finish open's clean-tree gate while keeping the live DB materialized on disk.
+	writeFileIn(t, r.root, "topo_esc.txt", "K-collide\n")
+	r.mustJJ(t, "describe", "-m", "chore: conflict inducer for ESC")
+	kChID := jjChangeIDAt(t, r.root, "@")
+	r.mustJJ(t, "rebase", "-r", escChange, "-o", kChID)
+	r.mustJJ(t, "new", kChID)
+
+	trunkChID := jjChangeIDAt(t, r.root, "trunk()")
+
+	// Pre-open sanity: ESC is parked on K and first-class conflicted.
+	if p := jjLogParents(t, r.root, escChange); p[escChange] != kChID {
+		t.Fatalf("pre-open: ESC %q parent = %q, want K %q", escChange, p[escChange], kChID)
+	}
+	if !inConflicts(t, r.root, escChange) {
+		t.Fatalf("pre-open: ESC %q is not conflicted — the conflict recipe failed", escChange)
+	}
+
+	// --- Run real `weft finish open` with a fake gh on PATH ---
+	fakeBinDir := t.TempDir()
+	writeFakeGH(t, fakeBinDir)
+	fakePATH := fakeBinDir + string(os.PathListSeparator) + os.Getenv("PATH")
+	fo := r.runWeftWithEnv(t, "", []string{"PATH=" + fakePATH}, "finish", "open", epic)
+
+	var foData struct {
+		Picks []struct {
+			Bead   string `json:"bead"`
+			Change string `json:"change"`
+		} `json:"picks"`
+		DryRun bool `json:"dry_run"`
+	}
+	if err := json.Unmarshal(fo.Data, &foData); err != nil {
+		t.Fatalf("parse finish.open data: %v\ndata: %s", err, fo.Data)
+	}
+	if foData.DryRun {
+		t.Fatal("finish open --dry-run flag was NOT passed but envelope reports dry_run:true")
+	}
+	// Only the 3 CLOSED picks appear; the conflicted, escalated ESC is excluded.
+	if len(foData.Picks) != 3 {
+		t.Fatalf("finish open picks = %d, want 3 (closed only): %s", len(foData.Picks), fo.Data)
+	}
+	for _, p := range foData.Picks {
+		if p.Bead == pickESC {
+			t.Fatalf("escalated bead %s must not appear in finish open picks", pickESC)
+		}
+	}
+
+	// --- Assert topology: A/B/C linear on trunk(); ESC untouched + still conflicted ---
+	revset := fmt.Sprintf("%s | %s | %s | %s", chA, chB, chC, escChange)
+	parents := jjLogParents(t, r.root, revset)
+	for _, ch := range []string{chA, chB, chC, escChange} {
+		if _, ok := parents[ch]; !ok {
+			t.Fatalf("change %q not found in jj topology query; got: %v", ch, parents)
+		}
+	}
+	// Exactly one closed pick roots on trunk(), the other two chain onto closed
+	// picks (linear line). Order among A/B/C is unspecified (no dep edges), so we
+	// assert only the chain shape, matching TestFinishOpenCollapseTopology.
+	closedParents := map[string]string{chA: parents[chA], chB: parents[chB], chC: parents[chC]}
+	trunkChildren := 0
+	for _, pl := range closedParents {
+		if pl == trunkChID {
+			trunkChildren++
+		}
+	}
+	if trunkChildren != 1 {
+		t.Fatalf("exactly 1 closed pick must be a direct child of trunk() after collapse; got %d. parents: %v trunkChID=%q",
+			trunkChildren, closedParents, trunkChID)
+	}
+	closedSet := map[string]bool{chA: true, chB: true, chC: true}
+	inChainParents := 0
+	for _, pl := range closedParents {
+		if closedSet[pl] {
+			inChainParents++
+		}
+	}
+	if inChainParents != 2 {
+		t.Fatalf("linear chain must have 2 picks whose parent is also a closed pick; got %d. parents: %v",
+			inChainParents, closedParents)
+	}
+
+	// ESC: parent unchanged (== K, which is NOT trunk() and NOT any closed pick),
+	// still conflicted, and dragged into the collapsed line by nothing.
+	escParent := parents[escChange]
+	if escParent != kChID {
+		t.Fatalf("conflicted escalated ESC %q parent = %q, want unchanged K %q — collapse moved the parked conflicted sibling",
+			escChange, escParent, kChID)
+	}
+	if !inConflicts(t, r.root, escChange) {
+		t.Fatalf("conflicted escalated ESC %q is no longer in conflicts() after collapse — its conflict was silently resolved/absorbed", escChange)
+	}
+	for _, pl := range closedParents {
+		if pl == escChange {
+			t.Fatalf("a closed pick has escalated change %q as its parent — ESC was dragged into the collapsed line", escChange)
+		}
+	}
+	if closedSet[escParent] {
+		t.Fatalf("escalated ESC %q parent %q is one of the closed picks — collapse incorrectly moved ESC", escChange, escParent)
 	}
 }

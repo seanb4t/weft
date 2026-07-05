@@ -189,12 +189,13 @@ type importDep struct {
 
 // Replan is the computed re-plan delta against an existing warp (spec §7).
 type Replan struct {
-	jsonl         []byte         // bd import payload (one record per pick, newline-delimited)
-	Created       []string       // refs with no existing bead (created by import, fields + parent only)
-	Updated       []string       // refs matched to an existing bead (fields/labels/edges updated)
-	DeferredEdges []Edge         // edges touching a not-yet-created pick (wired post-import — §8)
-	Removed       []string       // refs present in the warp but absent from the plan (supersede is §8)
-	Expect        []ReplanExpect // authored expectations for post-import read-back verification (never nil)
+	jsonl          []byte         // bd import payload (one record per pick, newline-delimited)
+	Created        []string       // refs with no existing bead (created by import, fields + parent only)
+	Updated        []string       // refs matched to an existing bead (fields/labels/edges updated)
+	DeferredEdges  []Edge         // edges touching a not-yet-created pick (wired post-import — §8)
+	Removed        []string       // refs absent from the plan whose live status is exactly "open" — the only status safe to close on removal (enacted: bd close after edge wiring)
+	RemovedBlocked []string       // refs absent from the plan with any non-open status (in_progress/closed/blocked/hooked/deferred/pinned/empty/unknown); a live replan hard-fails before any mutation rather than risk dropping work (I2, ADR weft-0pq, fail-closed)
+	Expect         []ReplanExpect // authored expectations for post-import read-back verification (never nil)
 }
 
 // JSONL returns a defensive copy of the bd import wire payload so callers
@@ -212,7 +213,7 @@ func (r Replan) JSONL() []byte {
 // BOTH endpoints already have ids; edges touching a newly created pick are
 // reported as DeferredEdges (their bead-id does not exist until import runs).
 func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]ExistingBead) (Replan, error) {
-	rp := Replan{Created: []string{}, Updated: []string{}, DeferredEdges: []Edge{}, Removed: []string{}, Expect: []ReplanExpect{}}
+	rp := Replan{Created: []string{}, Updated: []string{}, DeferredEdges: []Edge{}, Removed: []string{}, RemovedBlocked: []string{}, Expect: []ReplanExpect{}}
 
 	// Group resolvable edges (both endpoints matched) by dependent ref.
 	depsByRef := map[string][]importDep{}
@@ -271,11 +272,26 @@ func BuildReplan(p WarpPlan, d Derivation, epicID string, refToID map[string]Exi
 	for _, pk := range p.Picks {
 		inPlan[pk.Ref] = true
 	}
-	for ref := range refToID {
-		if !inPlan[ref] {
+	for ref, existing := range refToID {
+		if inPlan[ref] {
+			continue
+		}
+		// Classify a removed ref by its LIVE status, failing CLOSED. Only an
+		// explicitly not-yet-started ("open") pick is safe to close on removal.
+		// Every other status — in_progress/closed (woven or landed work),
+		// blocked/hooked/deferred/pinned, and any empty/unknown/future status bd
+		// may add — is blocked: a live replan hard-fails rather than risk
+		// silently dropping work (I2, ADR weft-0pq). This mirrors reap.go's
+		// beadStatus posture, where a destructive op treats unrecognized state as
+		// unsafe rather than reapable.
+		switch existing.Status {
+		case "open":
 			rp.Removed = append(rp.Removed, ref)
+		default:
+			rp.RemovedBlocked = append(rp.RemovedBlocked, ref)
 		}
 	}
 	sort.Strings(rp.Removed)
+	sort.Strings(rp.RemovedBlocked)
 	return rp, nil
 }

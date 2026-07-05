@@ -9,8 +9,11 @@ package config
 import (
 	"errors"
 	"io/fs"
+	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/seanb4t/weft/internal/exit"
 )
 
 // DefaultShedMax is the conservative wave-size cap when none is configured
@@ -36,6 +39,12 @@ type Config struct {
 		Structural []string `toml:"structural"`
 		OverlapMax *int     `toml:"overlap_max"` // pointer: distinguishes unset from an explicit 0
 	} `toml:"plan"`
+	Liveness struct {
+		Threshold string `toml:"threshold"`
+	} `toml:"liveness"`
+	Conflict struct {
+		MaxResolveAttempts *int `toml:"max_resolve_attempts"` // pointer: distinguishes unset from an explicit 0
+	} `toml:"conflict"`
 }
 
 // Load reads the TOML config at path. A missing file is not an error — it
@@ -92,4 +101,49 @@ func (c Config) PlanOverlapMax() int {
 		return 0
 	}
 	return *c.Plan.OverlapMax
+}
+
+// DefaultMaxResolveAttempts bounds conflict-resolution attempts before an agent
+// thrashing on an unresolvable merge is forced into escalation (spec I4).
+const DefaultMaxResolveAttempts = 3
+
+// DefaultLivenessThreshold is the conservative default liveness window when
+// [liveness] threshold is unset (spec §5.1).
+const DefaultLivenessThreshold = 45 * time.Minute
+
+// MaxResolveAttempts returns the [conflict] max_resolve_attempts cap, defaulting
+// to DefaultMaxResolveAttempts when unset. A configured value < 1 is rejected as
+// an invocation error rather than clamped: unlike PlanOverlapMax (where 0 is a
+// meaningful "serialize on any overlap"), a resolve cap below 1 cannot be
+// honored as a bound — silently treating it as no-cap would let an oscillating
+// resolver loop forever (the bd-ready-limit-0 gotcha class).
+func (c Config) MaxResolveAttempts() (int, error) {
+	if c.Conflict.MaxResolveAttempts == nil {
+		return DefaultMaxResolveAttempts, nil
+	}
+	if *c.Conflict.MaxResolveAttempts < 1 {
+		return 0, exit.Invocationf("[conflict] max_resolve_attempts = %d is invalid: must be >= 1 (a cap cannot invert to no-cap)", *c.Conflict.MaxResolveAttempts)
+	}
+	return *c.Conflict.MaxResolveAttempts, nil
+}
+
+// LivenessThreshold returns the [liveness] threshold, defaulting to 45m when
+// unset. Conservative by design: a thinking-but-quiet executor can look dead;
+// the cost is bounded because reap runs at orchestrator startup/resume, not
+// mid-wave (seam 3 §5.1). A configured value <= 0 is rejected as an invocation
+// error rather than honored: a non-positive threshold marks every workspace
+// dead immediately, and reap would destroy every live in-progress executor
+// (inverts I3) — the bd-ready-limit-0 gotcha class.
+func (c Config) LivenessThreshold() (time.Duration, error) {
+	if c.Liveness.Threshold == "" {
+		return DefaultLivenessThreshold, nil
+	}
+	d, err := time.ParseDuration(c.Liveness.Threshold)
+	if err != nil {
+		return 0, err
+	}
+	if d <= 0 {
+		return 0, exit.Invocationf("[liveness] threshold = %q is invalid: must be > 0 (a non-positive threshold marks every workspace dead and reap would destroy live executors)", c.Liveness.Threshold)
+	}
+	return d, nil
 }

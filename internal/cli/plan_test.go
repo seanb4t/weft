@@ -857,6 +857,201 @@ func TestPlanEmitReplanImportUnparseableIsHard(t *testing.T) {
 	}
 }
 
+// TestReplanEnactsRemovals (seam 2 §8): a live replan closes a removed OPEN pick
+// with an audit reason AFTER edge wiring. The fixture carries a real deferred
+// (blocks) edge — new pick "b" needs matched pick "a" — so the post-import
+// `bd dep add ... --type blocks` call actually fires; the test asserts that
+// call's index precedes the `bd close` index, catching any future regression
+// that reorders the enactment loop ahead of the edge-wiring loop. Envelope
+// carries removed:[gone] with an empty (non-nil) removed_blocked.
+func TestReplanEnactsRemovals(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[`+
+		`{"ref":"a","title":"A","description":"a"},`+
+		`{"ref":"b","title":"B","description":"b","needs":["a"]}]}`)
+	// Pre-import children: "a" (matched) and "gone" (open, absent from plan). "b"
+	// is new, so its b->a edge defers past import.
+	preImport := `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
+		`{"id":"e.9","status":"open","title":"Gone","priority":2,"labels":["weft-ref:gone"],"description":"gone"}]`
+	// Post-import readback: "b" now visible (parent wired), so the deferred edge resolves.
+	postImport := `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
+		`{"id":"e.2","status":"open","title":"B","priority":2,"labels":["weft-ref:b"],"description":"b"},` +
+		`{"id":"e.9","status":"open","title":"Gone","priority":2,"labels":["weft-ref:gone"],"description":"gone"}]`
+	importCalled := false
+	var closeArgs []string
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(j, "list --parent"):
+			if !importCalled {
+				return run.Result{Stdout: preImport, Code: 0}
+			}
+			return run.Result{Stdout: postImport, Code: 0}
+		case strings.HasPrefix(j, "import"):
+			importCalled = true
+			// sortedPicks: a(0)=e.1 matched, b(1)=e.2 created.
+			return run.Result{Stdout: `{"created":1,"ids":["e.1","e.2"],"schema_version":1}`, Code: 0}
+		case strings.HasPrefix(j, "close"):
+			closeArgs = args
+			return run.Result{Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "e", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// Enactment order: the removed-pick close must fire AFTER both bd import and
+	// the deferred-edge `dep add --type blocks` wiring — removals are enacted only
+	// once the warp's structure is fully settled.
+	importIdx, blocksIdx, closeIdx := -1, -1, -1
+	for i, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "bd import") {
+			importIdx = i
+		}
+		if strings.Contains(j, "dep add") && strings.Contains(j, "--type blocks") {
+			blocksIdx = i
+		}
+		if strings.Contains(j, "bd close") {
+			closeIdx = i
+		}
+	}
+	if importIdx < 0 || blocksIdx < 0 || closeIdx < 0 {
+		t.Fatalf("expected import, blocks dep add, and close calls; import=%d blocks=%d close=%d calls=%v", importIdx, blocksIdx, closeIdx, r.calls)
+	}
+	if !(importIdx < blocksIdx && blocksIdx < closeIdx) {
+		t.Fatalf("order must be import < blocks-dep-add < close; import=%d blocks=%d close=%d calls=%v", importIdx, blocksIdx, closeIdx, r.calls)
+	}
+	want := "close e.9 -r removed by replan of e (was weft-ref:gone)"
+	if strings.Join(closeArgs, " ") != want {
+		t.Errorf("bd close args = %q, want %q", strings.Join(closeArgs, " "), want)
+	}
+	var env struct {
+		Data struct {
+			Removed        []string `json:"removed"`
+			RemovedBlocked []string `json:"removed_blocked"`
+		} `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("envelope unmarshal: %v\n%s", e, out.String())
+	}
+	if len(env.Data.Removed) != 1 || env.Data.Removed[0] != "gone" {
+		t.Errorf("removed = %v, want [gone]", env.Data.Removed)
+	}
+	if env.Data.RemovedBlocked == nil {
+		t.Errorf("removed_blocked must be a non-null array, got null: %s", out.String())
+	} else if len(env.Data.RemovedBlocked) != 0 {
+		t.Errorf("removed_blocked must be empty on an all-open removal, got %v", env.Data.RemovedBlocked)
+	}
+}
+
+// TestReplanHardFailsOnBlockedRemoval is the I2 invariant test (ADR weft-0pq):
+// a LIVE replan that would drop an in_progress pick must hard-fail (exit 2)
+// BEFORE any mutation. The proof is the runner call log — NO bd import and NO bd
+// close may appear — not merely that an error was returned. The error names the
+// dropped pick and its live status.
+func TestReplanHardFailsOnBlockedRemoval(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	children := `[{"id":"e.1","status":"open","labels":["weft-ref:a"]},` +
+		`{"id":"e.9","status":"in_progress","labels":["weft-ref:woven"]}]`
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
+			return run.Result{Stdout: children, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("dropping an in_progress pick must hard-fail (exit 2), got %d (err=%v)", got, err)
+	}
+	// The invariant is about ORDER: the abort precedes all mutation.
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "bd import") {
+			t.Fatalf("I2 violated: bd import ran despite a blocked removal — the guard must abort before import: %v", r.calls)
+		}
+		if strings.Contains(j, "bd close") {
+			t.Fatalf("I2 violated: bd close ran despite a blocked removal: %v", r.calls)
+		}
+	}
+	if err == nil || !strings.Contains(err.Error(), "woven") || !strings.Contains(err.Error(), "in_progress") {
+		t.Errorf("error must name the pick (woven) and its status (in_progress), got: %v", err)
+	}
+}
+
+// TestReplanDryRunReportsBlockedWithoutMutating: a dry-run classifies both
+// buckets and reports {removed, removed_blocked, dry_run:true} without issuing
+// any bd import or bd close.
+func TestReplanDryRunReportsBlockedWithoutMutating(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	children := `[{"id":"e.1","status":"open","labels":["weft-ref:a"]},` +
+		`{"id":"e.8","status":"open","labels":["weft-ref:gone"]},` +
+		`{"id":"e.9","status":"in_progress","labels":["weft-ref:woven"]}]`
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		if strings.Contains(strings.Join(append([]string{name}, args...), " "), "bd list") {
+			return run.Result{Stdout: children, Code: 0}
+		}
+		return run.Result{Code: 0}
+	}}
+	out, err := newTestCmd(r, "plan", "emit", file, "--epic", "e", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var env struct {
+		Data struct {
+			DryRun         bool     `json:"dry_run"`
+			Removed        []string `json:"removed"`
+			RemovedBlocked []string `json:"removed_blocked"`
+		} `json:"data"`
+	}
+	if e := json.Unmarshal(out.Bytes(), &env); e != nil {
+		t.Fatalf("envelope unmarshal: %v\n%s", e, out.String())
+	}
+	if !env.Data.DryRun {
+		t.Errorf("dry_run must be true: %s", out.String())
+	}
+	if len(env.Data.Removed) != 1 || env.Data.Removed[0] != "gone" {
+		t.Errorf("removed = %v, want [gone]", env.Data.Removed)
+	}
+	if len(env.Data.RemovedBlocked) != 1 || env.Data.RemovedBlocked[0] != "woven" {
+		t.Errorf("removed_blocked = %v, want [woven]", env.Data.RemovedBlocked)
+	}
+	for _, c := range r.calls {
+		j := strings.Join(c, " ")
+		if strings.Contains(j, "bd import") || strings.Contains(j, "bd close") {
+			t.Fatalf("dry-run must not mutate (no import/close): %v", r.calls)
+		}
+	}
+}
+
+// TestReplanCloseFailureIsHard: a non-zero bd close on an open removal leaves the
+// warp inconsistent (import applied, removal not enacted) — hard-fail exit 2 with
+// the file's "warp is incomplete; investigate" posture.
+func TestReplanCloseFailureIsHard(t *testing.T) {
+	file := writePlanFile(t, `{"epic":{"title":"E"},"picks":[{"ref":"a","title":"A","description":"a"}]}`)
+	children := `[{"id":"e.1","status":"open","title":"A","priority":2,"labels":["weft-ref:a"],"description":"a"},` +
+		`{"id":"e.9","status":"open","title":"Gone","priority":2,"labels":["weft-ref:gone"],"description":"gone"}]`
+	r := &routeRunner{fn: func(_ string, args []string) run.Result {
+		j := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(j, "list --parent"):
+			return run.Result{Stdout: children, Code: 0}
+		case strings.HasPrefix(j, "import"):
+			return run.Result{Stdout: `{"created":0,"ids":["e.1"],"schema_version":1}`, Code: 0}
+		case strings.HasPrefix(j, "close"):
+			return run.Result{Code: 1, Stderr: "close boom"}
+		}
+		return run.Result{Code: 0}
+	}}
+	err := runRoot(r, "plan", "emit", file, "--epic", "e")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("bd close failure must hard-fail (exit 2), got %d (err=%v)", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "warp is incomplete; investigate") {
+		t.Errorf("error must carry the warp-incomplete posture, got: %v", err)
+	}
+}
+
 func TestPlanEmitReplanAppliesDeferredEdges(t *testing.T) {
 	// Plan: existing pick a (matched), new pick b with needs:[a] -> the a<-b
 	// edge is deferred past import and must be wired via bd dep add using the
