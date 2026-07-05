@@ -605,6 +605,56 @@ func TestConflictFinalizeClearsCounterOnHeal(t *testing.T) {
 			}
 		}
 	})
+
+	// A finalize where the resolution workspace's `@` is conflict-free (passes
+	// the still-conflicted gate, so squash proceeds) but scopedConflictChanges
+	// still reports the change's subtree conflicted after the squash. The
+	// counter must NOT be cleared here — clearing it would reset the I4
+	// oscillation guard on a change that never fully healed.
+	t.Run("squashed but subtree still conflicted does not clear", func(t *testing.T) {
+		root := t.TempDir()
+		resolvePath := workspace.ResolvePath(root, "", "weft-hjx.4.2")
+		if err := os.MkdirAll(resolvePath, 0o755); err != nil {
+			t.Fatalf("mkdir resolve path: %v", err)
+		}
+		r := &routeRunner{fn: func(name string, args []string) run.Result {
+			j := strings.Join(append([]string{name}, args...), " ")
+			switch {
+			case strings.Contains(j, "bd show weft-hjx.4.2"):
+				return run.Result{Stdout: `[{"title":"b","status":"in_progress","labels":["jj-change:chb","resolve-attempts:2"]}]`, Code: 0}
+			case strings.Contains(j, "jj") && strings.Contains(j, "root"):
+				return run.Result{Stdout: root, Code: 0}
+			case strings.Contains(j, "conflicts() & weft-hjx__4__2-resolve@"):
+				return run.Result{Stdout: "", Code: 0} // resolution workspace's @ is NOT conflicted -> passes escalation gate
+			case strings.Contains(j, "diff --git -r weft-hjx__4__2-resolve@"):
+				return run.Result{Stdout: "diff --git a/x b/x\n+fixed\n", Code: 0} // non-empty resolution -> squash proceeds
+			case strings.Contains(j, "conflicts()") && strings.Contains(j, "descendants(chb)"):
+				return run.Result{Stdout: "chb\n", Code: 0} // STILL conflicted post-squash -> not healed
+			default:
+				return run.Result{Code: 0}
+			}
+		}}
+		out, err := newTestCmd(r, "conflict", "finalize", "weft-hjx.4.2", "--json")
+		if err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		for _, c := range r.calls {
+			if strings.Contains(strings.Join(c, " "), "--remove-label resolve-attempts") {
+				t.Errorf("counter must persist when the change's subtree is still conflicted; calls=%v", r.calls)
+			}
+		}
+		var env struct {
+			Data struct {
+				Healed []string `json:"healed"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(out.String()), &env); err != nil {
+			t.Fatalf("decode envelope: %v; out=%q", err, out.String())
+		}
+		if len(env.Data.Healed) != 0 {
+			t.Errorf("healed = %v; want [] (change still conflicted)", env.Data.Healed)
+		}
+	})
 }
 
 // TestConflictFinalizeRequiresOpenWorkspace verifies that calling finalize without

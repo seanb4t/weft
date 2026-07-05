@@ -258,7 +258,7 @@ func (a *App) planReplan(cmd *cobra.Command, wp plan.WarpPlan, d plan.Derivation
 		for i, ref := range rp.RemovedBlocked {
 			parts[i] = fmt.Sprintf("%s (%s)", ref, existing[ref].Status)
 		}
-		return exit.Hardf("re-plan drops %d pick(s) that are not open [%s] — a live replan can only remove open picks; any other status (in_progress, closed, blocked, hooked, deferred, or unknown) blocks to avoid silently dropping work (I2); express supersede intent against open picks only",
+		return exit.Hardf("re-plan drops %d pick(s) that are not open [%s] — only open picks are removable; any non-open status (in_progress, closed, blocked, hooked, deferred, pinned, or unknown) blocks a live replan to avoid silently dropping work (I2); express supersede intent against open picks only",
 			len(rp.RemovedBlocked), strings.Join(parts, ", "))
 	}
 	warnings := []string{} // vacuously empty for dry-run (no bd call); present for envelope-shape stability
@@ -481,7 +481,7 @@ func replanText(epic string, rp plan.Replan, dry bool) string {
 	if len(rp.RemovedBlocked) > 0 {
 		// Only reachable on dry-run: a live replan hard-fails before this text
 		// renders when RemovedBlocked is non-empty (I2).
-		fmt.Fprintf(&b, "  %d removed ref(s) BLOCKED — in_progress/closed; a live replan hard-fails (I2): %s\n",
+		fmt.Fprintf(&b, "  %d removed ref(s) BLOCKED — only open picks are removable; any non-open status (in_progress, closed, blocked, hooked, deferred, pinned, or unknown) blocks a live replan (I2): %s\n",
 			len(rp.RemovedBlocked), strings.Join(rp.RemovedBlocked, ", "))
 	}
 	if dry {

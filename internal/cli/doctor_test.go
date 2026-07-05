@@ -19,16 +19,18 @@ import (
 // three passes make. Zero values yield a healthy, empty warp (no workspaces, no
 // in_progress beads, no open epics), so a test sets only the pieces it exercises.
 type doctorCfg struct {
-	root       string
-	workspaces string                // jj workspace list stdout (default "default\n")
-	beadShow   map[string]run.Result // bd show <bead> --json, keyed by bead-id
-	stale      map[string]bool       // workspace name → stale liveness timestamp
-	inProgress string                // bd list --status in_progress --json (default "[]")
-	landed     map[string]bool       // change-id present in ::trunk()
-	conflicted map[string]bool       // change-id present in conflicts()
-	epicStatus string                // bd epic status --json (default "[]")
-	bookmarks  map[string]string     // epic → jj bookmark list stdout ("" = absent)
-	prView     map[string]run.Result // epic → gh pr view --json state result
+	root           string
+	workspaces     string                // jj workspace list stdout (default "default\n")
+	beadShow       map[string]run.Result // bd show <bead> --json, keyed by bead-id
+	stale          map[string]bool       // workspace name → stale liveness timestamp
+	inProgress     string                // bd list --status in_progress --json (default "[]")
+	landed         map[string]bool       // change-id present in ::trunk()
+	conflicted     map[string]bool       // change-id present in conflicts()
+	epicStatus     string                // bd epic status --json (default "[]")
+	epicStatusFail bool                  // force `bd epic status` to a non-zero exit (infra failure)
+	bookmarks      map[string]string     // epic → jj bookmark list stdout ("" = absent)
+	bookmarkFail   bool                  // force `jj bookmark list` to a non-zero exit (infra failure)
+	prView         map[string]run.Result // epic → gh pr view --json state result
 }
 
 // argAfter returns the argument following flag, or "".
@@ -85,6 +87,9 @@ func doctorFake(cfg doctorCfg) *routeRunner {
 			}
 			return run.Result{Code: 0}
 		case name == "jj" && strings.Contains(j, "bookmark list"):
+			if cfg.bookmarkFail {
+				return run.Result{Code: 1, Stderr: "jj: internal error"}
+			}
 			return run.Result{Stdout: cfg.bookmarks[args[len(args)-1]], Code: 0}
 		case name == "bd" && len(args) >= 2 && args[0] == "show":
 			if r, ok := cfg.beadShow[args[1]]; ok {
@@ -92,6 +97,9 @@ func doctorFake(cfg doctorCfg) *routeRunner {
 			}
 			return run.Result{Code: 1, Stdout: `{"error":"no issues found matching the provided IDs"}`}
 		case name == "bd" && len(args) >= 2 && args[0] == "epic" && args[1] == "status":
+			if cfg.epicStatusFail {
+				return run.Result{Code: 1, Stderr: "bd: dial tcp: connection refused"}
+			}
 			return run.Result{Stdout: cfg.epicStatus, Code: 0}
 		case name == "bd" && len(args) >= 1 && args[0] == "list":
 			return run.Result{Stdout: cfg.inProgress, Code: 0}
@@ -544,10 +552,40 @@ func TestDoctorBDListFailureIsHardExit2(t *testing.T) {
 	}
 }
 
+// TestDoctorEpicStatusFailureIsHardExit2 verifies that Pass 3's `bd epic
+// status` failure keeps the fail-safe exit-2 posture, matching Pass 1/2's
+// infra-failure tests: bd is local infrastructure, so any failure hard-fails
+// rather than degrading to a warning (unlike the gh-side best-effort calls).
+func TestDoctorEpicStatusFailureIsHardExit2(t *testing.T) {
+	root := t.TempDir()
+	fake := doctorFake(doctorCfg{root: root, epicStatusFail: true})
+	_, err := newTestCmd(fake, "doctor")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("bd epic status failure must hard-fail (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
+// TestDoctorBookmarkListFailureIsHardExit2 verifies that Pass 3's `jj bookmark
+// list` failure hard-fails (exit 2): jj is local infrastructure like the
+// change-in-trunk/change-conflicted checks, so a failure here must not be
+// mistaken for the gh-side best-effort degradation.
+func TestDoctorBookmarkListFailureIsHardExit2(t *testing.T) {
+	root := t.TempDir()
+	fake := doctorFake(doctorCfg{
+		root:         root,
+		epicStatus:   `[{"epic":{"id":"weft-hjx","status":"open"}}]`,
+		bookmarkFail: true,
+	})
+	_, err := newTestCmd(fake, "doctor")
+	if got := exit.Code(err); got != 2 {
+		t.Fatalf("jj bookmark list failure must hard-fail (exit 2), got %d (err=%v)", got, err)
+	}
+}
+
 // --- Invariant I1: doctor reports, never mutates (ADR weft-qc0) -------------
 
 // TestDoctorNeverMutates is the DIRECT assertion of invariant I1 (plan
-// 2026-07-04-unattended-trust.md:850 — "no bd/jj write calls in any doctor
+// 2026-07-04-unattended-trust.md:852 — "no bd/jj write calls in any doctor
 // test's runner log"). It mirrors resume_test.go's TestResumeProjectsState
 // call-log scan, but over a fixture engineered to reach ALL THREE doctor
 // passes and emit a finding in each — so a regression that mutated in Pass 2

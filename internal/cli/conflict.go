@@ -330,8 +330,13 @@ func (a *App) newConflictFinalizeCmd() *cobra.Command {
 			// oscillation guard) and no stray counter survives. Hard-fail like
 			// every other bd write here; a best-effort clear could leave a stale
 			// counter that false-escalates the next conflict. The escalated gate
-			// above returns earlier and deliberately does NOT clear.
-			if len(staleLabels) > 0 {
+			// above returns earlier and deliberately does NOT clear. Gate on the
+			// change actually healing (not merely the resolution workspace's `@`
+			// being conflict-free): scopedConflictChanges can still report the
+			// change's subtree conflicted after the squash, and clearing the
+			// counter then would reset the I4 oscillation guard on a change that
+			// never fully healed.
+			if !remainingSet[change] && len(staleLabels) > 0 {
 				updateArgs := []string{"update", bead}
 				for _, l := range staleLabels {
 					updateArgs = append(updateArgs, "--remove-label", l)

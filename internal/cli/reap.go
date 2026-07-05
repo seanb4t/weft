@@ -55,7 +55,7 @@ func (a *App) newReapCmd() *cobra.Command {
 				bead, _ := workspace.Resolve(name) // kind-aware: strips -resolve, desanitizes
 				// --epic scope: bead-ids are hierarchical, so a descendant of the
 				// epic has it as a dotted prefix (e.g. weft-hjx.1.3 under weft-hjx.1).
-				if epic != "" && bead != epic && !strings.HasPrefix(bead, epic+".") {
+				if !scopedToEpic(epic, bead) {
 					continue
 				}
 				status, err := beadStatus(a.Runner, bead)

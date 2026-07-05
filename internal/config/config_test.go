@@ -187,3 +187,57 @@ func TestLivenessThresholdDefaultAndParse(t *testing.T) {
 		t.Error("malformed threshold must error")
 	}
 }
+
+// TestLivenessThresholdConfig verifies the [liveness] threshold guard (spec
+// I3): default 45m when unset, an explicit value honored, and a non-positive
+// configured value (zero or negative) rejected as an invocation error — a
+// non-positive threshold marks every workspace dead and reap would destroy
+// every live in-progress executor (the bd-ready-limit-0 gotcha class).
+func TestLivenessThresholdConfig(t *testing.T) {
+	// Unset -> default.
+	var c Config
+	got, err := c.LivenessThreshold()
+	if err != nil {
+		t.Fatalf("unset must not error: %v", err)
+	}
+	if got != DefaultLivenessThreshold {
+		t.Errorf("unset LivenessThreshold() = %v, want default %v", got, DefaultLivenessThreshold)
+	}
+
+	// Explicit value honored.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[liveness]\nthreshold = \"90m\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	got, err = cfg.LivenessThreshold()
+	if err != nil {
+		t.Fatalf("explicit 90m must not error: %v", err)
+	}
+	if got != 90*time.Minute {
+		t.Errorf("LivenessThreshold() = %v, want 90m", got)
+	}
+
+	// "0s" rejected as an invocation error (exit 1): a non-positive threshold
+	// marks every workspace dead.
+	var c2 Config
+	c2.Liveness.Threshold = "0s"
+	if _, err := c2.LivenessThreshold(); err == nil {
+		t.Fatal("threshold = \"0s\" must be rejected")
+	} else if code := exit.Code(err); code != 1 {
+		t.Errorf("threshold = \"0s\" must be an invocation error (exit 1), got exit %d", code)
+	}
+
+	// Negative rejected as an invocation error.
+	var c3 Config
+	c3.Liveness.Threshold = "-5m"
+	if _, err := c3.LivenessThreshold(); err == nil {
+		t.Fatal("threshold = \"-5m\" must be rejected")
+	} else if code := exit.Code(err); code != 1 {
+		t.Errorf("threshold = \"-5m\" must be an invocation error (exit 1), got exit %d", code)
+	}
+}
