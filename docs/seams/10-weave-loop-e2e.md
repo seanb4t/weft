@@ -8,9 +8,11 @@
 > Status: **shipped** (integration-gated E2E live in CI). Sub-spec of
 > [`docs/design.md`](../design.md) §9 (capstone — the loop the other seams
 > compose). Tracked as bead `weft-w1y` (child of `weft-hjx`). The weave loop
-> already exists as a draft: [`weft/workflows/execute.md`](../../weft/workflows/execute.md)
-> (332 lines, ported in seam 5, `weft-hjx.5`) drives the verbs delivered by
-> seams 1–4/6. This seam does **not** rewrite that workflow or the engine; it
+> already existed as a draft, `weft/workflows/execute.md` (332 lines, ported in
+> seam 5, `weft-hjx.5`), which drove the verbs delivered by seams 1–4/6. That
+> draft was later collapsed into the shipped `execute` skill and removed with the
+> legacy `weft/` tree in `weft-9q5`.
+> This seam does **not** rewrite that workflow or the engine; it
 > *proves the loop closes* against the real substrate and corrects the one place
 > the draft has already drifted from the shipped verb surface (§5).
 
