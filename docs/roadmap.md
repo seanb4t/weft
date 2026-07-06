@@ -149,8 +149,9 @@ Ordered by how directly it serves the target:
 **Remove:**
 
 - **The legacy `weft/` prompt tree** — 15 tracked files, unshipped, unvalidated, CI-fenced,
-  undocumented at top level; a newcomer cannot tell it from `plugin/`. **✓ confirmed: delete**
-  (Sean 2026-07-04; git history preserves it; `plugin/` is the product). See §9.
+  undocumented at top level; a newcomer cannot tell it from `plugin/`. **✓ done** — deleted via
+  `weft-9q5` / PR #107 (2026-07-05); `NOTICE` provenance repointed `weft/`→`plugin/`. Git history
+  preserves it; `plugin/` is the product. See §9.
 
 **Process fix:**
 
@@ -194,7 +195,8 @@ Adopted 2026-07-03 as recommended defaults to make this roadmap actionable; **co
 1. **Next milestone = unattended-trust hardening (§7.4)** — over adoption/DX-first or
    new-capability-first. Rationale: it is the review's one structural gap, and both dogfood exits
    (§2.1, §2.2) depend on it. **✓ confirmed 2026-07-04.**
-2. **Legacy `weft/` tree: delete** rather than document (§6). **✓ confirmed 2026-07-04.**
+2. **Legacy `weft/` tree: delete** rather than document (§6). **✓ confirmed 2026-07-04; enacted
+   2026-07-05 (weft-9q5 / PR #107).**
 3. **v1.0 exit = fovea onboarded** (§2) — makes "done" externally testable rather than
    self-declared. **✓ confirmed 2026-07-04.**
 4. **Materialize deferred seam scope into the warp now** (§7.3), even where priority is P4 —
