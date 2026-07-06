@@ -79,27 +79,26 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      # Exact pin (v1.1.0-rc.1): the integration test is the drift sentinel for
+      # Exact pin (v1.1.0): the integration test is the drift sentinel for
       # weft's GraphJSON payload against the live bd graph schema. Bump
       # deliberately — bumping re-validates GraphJSON against the new bd
       # schema, which is the whole point of the sentinel. Renovate tracks
       # BD_VERSION (github-releases customManager in renovate.json) and opens
       # a bump PR when a newer bd release ships.
-      # Pre-release pin rationale: weft's graph parser is grounded against bd
-      # 1.0.5's schema (schema_version 1). That release was removed upstream,
-      # so 1.1.0-rc.1 — the available release that still emits schema_version 1
-      # and passes the drift sentinel — is pinned. 1.0.4 emits an older graph
-      # shape (parsed as 0 nodes) and fails the sentinel, so it is NOT viable.
-      # Re-pin to 1.1.0 stable (or a republished 1.0.5) once available.
+      # Pin rationale: weft's graph parser is grounded against bd schema_version
+      # 1. bd 1.1.0 (current stable) emits schema_version 1 and passes the graph
+      # + import drift sentinels and internal/weave TestSeedFixture. 1.0.4 emits
+      # an older graph shape (parsed as 0 nodes) and fails the sentinel, so a
+      # downgrade is NOT viable.
       - name: Install bd (pinned, checksum-verified)
         run: |
           set -euo pipefail
-          BD_VERSION=1.1.0-rc.1
+          BD_VERSION=1.1.0
           # BD_SHA256 is the linux_amd64 tarball hash for the pinned BD_VERSION.
           # Renovate bumps BD_VERSION but cannot recompute this hash, so on any
           # bump recompute it — the sha256sum -c check below fails closed until
           # then:  curl -fsSL "$url" | sha256sum
-          BD_SHA256=cf23adb2c3b4684651a002a7df94e2bbd235dc1c5135461756573449059aa876
+          BD_SHA256=b0f3dd607c3fb989ee08d0a6854fba80d0402971eb108f9af6170bc14d491a34
           url="https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz"
           curl -fsSL -o bd.tar.gz "$url"
           echo "${BD_SHA256}  bd.tar.gz" | sha256sum -c -
