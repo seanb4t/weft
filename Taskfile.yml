@@ -8,6 +8,32 @@ tasks:
     cmds:
       - go build ./...
 
+  install:
+    desc: Build weft (version stamped from jj) and install to ~/.local/bin
+    env:
+      CGO_ENABLED: "0"
+    vars:
+      # Version is derived from jj, NOT git: a jj workspace has no .git (so
+      # `git describe` fatals with "not a git repository"), and a colocated
+      # repo's git HEAD is usually detached (so branch-based derivation is
+      # empty). jj works in every workspace. The suffixed dev string
+      # deliberately fails internal/install.semverPattern, so an installed dev
+      # build never floats a release pin (see internal/cli/version.go).
+      VERSION:
+        sh: |
+          base=$(jj log --no-graph -r @- -T 'commit_id.short(12)' 2>/dev/null)
+          if [ -z "$base" ]; then
+            echo "0.0.0-dev"
+          else
+            dirty=""
+            [ "$(jj log --no-graph -r @ -T 'empty' 2>/dev/null)" = "false" ] && dirty="-dirty"
+            echo "0.0.0-dev+g${base}${dirty}"
+          fi
+    cmds:
+      - mkdir -p "$HOME/.local/bin"
+      - go build -trimpath -ldflags '-s -w -X github.com/seanb4t/weft/internal/cli.Version={{.VERSION}}' -o "$HOME/.local/bin/weft" ./cmd/weft
+      - 'echo "installed weft {{.VERSION}} -> $HOME/.local/bin/weft"'
+
   test:
     desc: Run the test suite
     cmds:
