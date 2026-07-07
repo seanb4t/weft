@@ -6,7 +6,7 @@
 # Weft — STATE (live position)
 
 > Status: **living** — rewritten as work moves; the synthesis layer, NOT a source of truth. ·
-> Updated: 2026-07-06
+> Updated: 2026-07-07
 >
 > **What this is:** the live "where are we, what's next, why". Read
 > [`roadmap.md`](./roadmap.md) first for intent, then this file for position, then **beads** for
@@ -24,21 +24,31 @@
 
 ## Current focus
 
-**Milestone:** unattended-trust hardening (roadmap §3 / §7.4) — **LANDED 2026-07-05** (epic
-`weft-x38`, PR #103 merged). Executed autonomously via `/drain`: nine pick-iterations, one
-bead per turn (the seven materialized picks plus two review-filed follow-ups — `.8`
-doctor-never-mutates I1 coverage, `.6.1` ADR/plan reconciliation), each an implementer subagent
-gated by two-stage spec + code/test review. Shipped: `internal/liveness` (inferred executor
-recency), `weft doctor` (whole-warp health join — report + propose, never mutates), `reap`
-executor_live wiring + foreign-workspace guard + `--dry-run`, seam-11 `finish reconcile`
-re-verification, resolver oscillation cap, replan removed-pick I2 guard, and the §7.4 doctor+reap
-exit-test E2E. Invariants I1–I4 all hold by test; `/review-pr` gate PASS (turn 1 caught two real
-invariant inversions — I3 non-positive threshold, I4 finalize gate — fixed + re-verified). Design
-trail: spec `docs/superpowers/specs/2026-07-04-unattended-trust-design.md`, plan
-`docs/superpowers/plans/2026-07-04-unattended-trust.md`, ADRs `weft-jcg`/`weft-qc0`/`weft-0pq`.
+**Milestone:** **weft weaves weft** — first self-weave (roadmap §7 step 5 / v1.0 exit criterion 1)
+— **first run LANDED 2026-07-07** (epic `weft-j4c`, PR #115 merged). weft planned and wove a real
+feature *through its own loop*, not the dev-flow meta-tooling that built v0.x: `feature` skill
+(rough seed → one intake round → `weft-planner` → `plan emit`) → `shed form`/`isolate` → per-pick
+`weft-executor` (TDD) → `pick verify`/`seal` → `shed integrate` → `pick land` → `finish open` →
+post-merge reconcile. Shipped feature: the **`weft status`** warp-progress readout — a Go
+subcommand (`internal/cli/status.go`; whole-warp overview + per-epic drill; text + `--json`;
+**beads-only**, no steering-doc coupling) plus the `/weft:status` plugin skill that narrates it.
+Two waves, zero conflicts, both verify gates green.
 
-**Active implementation:** none — the epic is closed, its picks and the `/drain` audit bead
-(`weft-t35`) closed, warp synced. Roadmap §7 steps 1–4 are complete.
+**The harvest (the point of dogfooding):** the planning/weaving logic came through clean on the
+first pass; **three defects surfaced at substrate *seams***, filed as `weft-uwq` (stale dist
+binary on PATH → `plan emit` silently under-wired parent/blocks edges — an exit-0 warp
+corruption), `weft-fxj` (`finish open`'s `gh pr create` omits `--head` → fails on jj's detached
+HEAD), and `weft-ojw` (`finish reconcile` errors when the merged head branch is deleted/pruned).
+All three cluster at tooling boundaries — artifact-currency, jj↔gh, post-merge — that unit tests
+don't exercise; the feature code itself carried none. `weft-uwq` remediation already in flight
+(`task install` jj-safe version stamp, PR #114 landed).
+
+**Active implementation:** none — epic `weft-j4c` closed, both picks landed on `main` (112f2488),
+warp synced. The three seam findings are open.
+
+**Prior milestone:** unattended-trust hardening (§3 / §7.4) landed 2026-07-05 (epic `weft-x38`,
+PR #103; steering groomed in #106) — `weft doctor`/`reap`/`internal/liveness`, invariants I1–I4 by
+test. Roadmap §7 steps 1–4 complete; git history + #103 carry the detail.
 
 **Recently established (2026-07-03):**
 
@@ -76,15 +86,17 @@ v0.2.1 #74, v0.2.2 #95) is retired from this doc; git history holds it.
 
 ## Next concrete step
 
-**Roadmap §7 step 5 — weft weaves weft** (v1.0 exit criterion 1): run a real weft feature
-end-to-end through weft's *own* loop (feature/new-project skill → `plan emit` → shed waves →
-picks → `finish`), not the dev-flow meta-tooling that built v0.x. With §3 unattended-trust
-landed, this is the next milestone — and the first one weft can plausibly run on itself.
+**Harden the self-weave loop** — §7 step 5 is now *demonstrated* (first run landed), not *done*.
+The next thread is to fix the three seam findings the run exposed — `weft-uwq` (binary-currency
+guard / `weft doctor` self-staleness check), `weft-fxj` (`finish open` → pass `--head`/`--base` to
+`gh`), `weft-ojw` (`finish reconcile` → tolerate a deleted/pruned merged branch) — so the next
+self-weave runs end-to-end without hand-holding. Then continue dogfooding toward the remaining
+v1.0 exits (fovea onboard; self-host that retires this steering pair). `bd ready` for the queue.
 
-**Carried (independent):** the legacy `weft/` prompt tree is **gone** — `weft-9q5` landed via
-PR #107 (15 files removed, `NOTICE` repointed `weft/`→`plugin/`, seam-10 de-linked, review gate
-PASS). jj workspace/bookmark hygiene is swept clean this session (see Strays); the only standing
-carry is that no shipped verb yet *automates* that sweep (`doctor` flags, `reap` guards).
+**Carried (independent):** the legacy `weft/` prompt tree is **gone** (`weft-9q5`, PR #107). jj
+workspace hygiene: `weft reap` now actively collects stale empty workspaces (it reaped the
+`claude-status` WC this session under an unscoped invocation — recreate if a statusline needs it);
+prefer `weft reap --epic <id>` to stay scoped.
 
 ## Open questions / decisions in flight
 
@@ -105,12 +117,13 @@ carry is that no shipped verb yet *automates* that sweep (`doctor` flags, `reap`
 A fresh session should read, in order: `roadmap.md` (intent) → `design.md` + `seams/` (what's
 built) → this file (where we are). Then `bd ready` for the actual work queue.
 
-- **Landed this cycle:** the **unattended-trust milestone** — epic `weft-x38` (§7.4) executed
-  end-to-end via `/drain` (9 picks, invariants I1–I4 by test, `/review-pr` PASS) and merged as
-  PR #103; §7.3 materialization + 3 ADRs (`weft-jcg`/`weft-qc0`/`weft-0pq`) preceded it. Steering
-  groomed in #106; the **legacy `weft/` tree was deleted** (`weft-9q5`, PR #107). Epic + drain
-  beads closed, warp synced.
+- **Landed this cycle:** the **first weft-weaves-weft self-weave** — epic `weft-j4c` planned and
+  woven through weft's own loop and merged as PR #115 (`weft status` subcommand + `/weft:status`
+  skill). The run harvested three seam findings (`weft-uwq`, `weft-fxj`, `weft-ojw`). Epic + both
+  picks closed, warp synced.
+- **Prior cycle:** unattended-trust milestone (`weft-x38`, PR #103; steering #106) and legacy
+  `weft/` tree deletion (`weft-9q5`, PR #107).
 - **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04.
-- **Next thread:** roadmap §7 step 5 — **weft weaves weft** (exit criterion 1). Carried: sweep the
-  stale `worktree-*` jj workspaces this session left, via the newly-shipped `doctor`/`reap`. All
-  fresh work off clean `main` (#107).
+- **Next thread:** harden the self-weave loop — fix `weft-uwq`/`weft-fxj`/`weft-ojw`, then continue
+  dogfooding toward the remaining v1.0 exits (fovea onboard; self-host). Fresh work off clean
+  `main` (112f2488, #115).
