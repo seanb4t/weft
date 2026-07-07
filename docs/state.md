@@ -49,8 +49,8 @@ which the loop certifies compilation, not correctness. `weft-p8t` (P2) adds E2E 
 whole `finish` family (covers `weft-fxj`/`weft-ojw`).
 
 **Active implementation:** none — epic `weft-j4c` closed, both picks landed on `main`, warp synced.
-The findings are open (`weft-1ve`, `weft-4e8`, `weft-fxj`, `weft-ojw`, `weft-p8t`); `weft-uwq`
-closed via #114.
+`weft-1ve` **fixed** (PR #118 merged); the remaining findings are open (`weft-4e8`, `weft-fxj`,
+`weft-ojw`, `weft-p8t`); `weft-uwq` closed via #114.
 
 **Prior milestone:** unattended-trust hardening (§3 / §7.4) landed 2026-07-05 (epic `weft-x38`,
 PR #103; steering groomed in #106) — `weft doctor`/`reap`/`internal/liveness`, invariants I1–I4 by
@@ -94,9 +94,15 @@ v0.2.1 #74, v0.2.2 #95) is retired from this doc; git history holds it.
 
 **Harden the self-weave loop** — §7 step 5 is *demonstrated* (first run landed), not *done*; the
 post-mortem (#117) shows weft can weave code but not yet ship a working feature unaided. Two threads,
-in priority: **(a) the loop's blind spot** — `weft-1ve` (fix the broken `weft status`: add `--all`)
-and `weft-4e8` (a real-execution smoke gate, so the loop can't again certify a non-functional
-feature); **(b) close the loop's own ends** — `weft-fxj` (`finish open` → pass `--head`/`--base`),
+in priority: **(a) the loop's blind spot** — `weft-1ve` (the broken `weft status`) is **fixed** (PR
+#118: `--all` + a *contract-faithful* regression fake, verified against the real warp). Its root
+cause generalized: the verify gap is **circular self-certification** — an executor authors the test,
+the fake it drives, and the code, and the gate checks only that they agree — not a missing flag. So
+`weft-4e8` (real-execution smoke gate) is now a *subset* of the deeper **`weft-y85`**: *generalize
+planner + verification* so self-certifying, fixture-only validation is structurally impossible for
+substrate-touching work — a discovered verification profile + per-pick validation surface + verify's
+three questions, **language/repo-agnostic**, held for a **dedicated design session** (brainstorm →
+spec → warp). **(b) close the loop's own ends** — `weft-fxj` (`finish open` → pass `--head`/`--base`),
 `weft-ojw` (`finish reconcile` → tolerate a deleted/pruned merged branch), with `weft-p8t` E2E
 coverage. (`weft-uwq` already remediated, PR #114.) Then continue dogfooding toward the remaining
 v1.0 exits (fovea onboard; self-host that retires this steering pair). `bd ready` for the queue.
@@ -134,7 +140,10 @@ built) → this file (where we are). Then `bd ready` for the actual work queue.
 - **Prior cycle:** unattended-trust milestone (`weft-x38`, PR #103; steering #106) and legacy
   `weft/` tree deletion (`weft-9q5`, PR #107).
 - **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04.
-- **Next thread:** harden the self-weave loop — first the loop's blind spot (`weft-1ve` broken
-  status, `weft-4e8` real-run gate), then close its ends (`weft-fxj`/`weft-ojw`, E2E `weft-p8t`);
-  then continue dogfooding toward the remaining v1.0 exits (fovea onboard; self-host). Fresh work off
-  clean `main`.
+- **Since the post-mortem:** `weft-1ve` **fixed** (PR #118 merged) and its root cause generalized
+  into design bead **`weft-y85`** (*generalize planner + verification* against circular
+  self-certification; `weft-4e8` is a subset) — held for a **dedicated design session**. This
+  steering refresh is PR #119.
+- **Next thread:** run the `weft-y85` design session (the loop's real blind spot), and close the
+  loop's own ends (`weft-fxj`/`weft-ojw`, E2E `weft-p8t`); then continue dogfooding toward the
+  remaining v1.0 exits (fovea onboard; self-host). Fresh work off clean `main`.
