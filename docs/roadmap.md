@@ -6,7 +6,7 @@
 # Weft — Roadmap (target state + path)
 
 > Status: **roadmap** — the living steering doc: what weft is *for*, the delta to it, and the
-> ordered path. Top of the doc pyramid. · Created/updated: 2026-07-05 ·
+> ordered path. Top of the doc pyramid. · Created/updated: 2026-07-07 ·
 > Authors: Sean Brandt (@seanb4t) · Assisted-by: Claude Fable 5
 >
 > - **Live position** — "where are we right now, what's next" → [`state.md`](./state.md), the
@@ -56,9 +56,11 @@ bead label, collapsing recovery, audit, and resume-after-compaction into one poi
 
 1. **Weft weaves weft.** A real feature of weft's own is planned and executed end-to-end through
    weft's loop (feature/new-project skill → `plan emit` → shed waves → picks → `finish`) — not
-   through the dev-flow meta-tooling that built v0.x. Today the loop has been proven only as the
-   scripted seam-10 CI gate plus one live dogfood; the tool has never routinely eaten its own
-   cooking. When it does, this doc pair retires onto the warp.
+   through the dev-flow meta-tooling that built v0.x. The first real self-weave landed 2026-07-07
+   (`weft status`, PR #115): the authoring core (plan → shed → execute → verify → land) self-hosted
+   first-try, but `finish` needed hand-holding and the deliverable shipped broken — see
+   `docs/postmortems/2026-07-07-weft-weaves-weft.md`. So the tool has *woven* its own code but cannot
+   yet *routinely ship working features* of its own. When it can, this doc pair retires onto the warp.
 2. **fovea onboards.** The first external repo: `weft onboard` on fovea, whose own interim
    roadmap/state cadence (fovea `docs/design/state.md`) explicitly waits on weft. That is the
    customer commitment that makes "done" externally testable.
@@ -169,9 +171,12 @@ Ordered by how directly it serves the target:
 3. **✓ Encode the plan.** Materialized §5's deferred scope into epic `weft-x38` (the first open
    epic since `weft-ccy` closed); drained in step 4.
 4. **✓ Unattended-trust milestone (§3).** Landed 2026-07-05 (epic `weft-x38`, PR #103; 9 picks,
-   invariants I1–I4 by test). **← steps 1–4 done; step 5 is next.**
-5. **Weft weaves weft.** First real self-hosted feature through the full loop; fix what it breaks;
-   retire this doc pair onto the warp.
+   invariants I1–I4 by test). **← steps 1–4 done.**
+5. **◐ Weft weaves weft.** First run LANDED 2026-07-07 (`weft status`, PR #115) — the authoring
+   core self-hosted, but `finish` was hand-held and the feature shipped broken (post-mortem:
+   `docs/postmortems/2026-07-07-weft-weaves-weft.md`). Exit criterion 1 **not yet met**: loop
+   hardening in flight (`weft-1ve`, `weft-4e8`, `weft-fxj`, `weft-ojw`, `weft-p8t`) so the next
+   self-weave both closes its own loop and ships working code. Then retire this doc pair onto the warp.
 6. **Onboard fovea.** Exit criterion 2; fovea's interim cadence retires too.
 7. **Pulled-by-need infra** (§5, last bullet) — only as real usage demands.
 
