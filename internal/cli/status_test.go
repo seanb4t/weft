@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,6 +120,54 @@ func TestStatusOverviewEmptyWarp(t *testing.T) {
 	}
 	if s := jsonOut.String(); !strings.Contains(s, `"epics": []`) {
 		t.Errorf("empty warp --json missing epics: [], got %q", s)
+	}
+}
+
+// weft-1ve regression: status must ask bd for ALL issues (--all) on both the
+// epic list and the per-epic children list, else closed epics and closed picks
+// are invisible and a full warp of finished work reports as "empty" / "done 0".
+//
+// The fake here is CONTRACT-FAITHFUL: it honours bd's default open-only filter
+// and returns closed records ONLY when --all is present. That fidelity is
+// exactly what the original permissive fixtures lacked — they handed back closed
+// data the production call never requested, so a missing --all went unnoticed.
+func TestStatusOverviewSurfacesClosedWorkViaAllFlag(t *testing.T) {
+	r := &routeRunner{fn: func(name string, args []string) run.Result {
+		j := strings.Join(append([]string{name}, args...), " ")
+		switch {
+		case strings.Contains(j, "list --type epic"):
+			if slices.Contains(args, "--all") {
+				return run.Result{Stdout: `[{"id":"weft-open","title":"Open Epic","status":"open"},{"id":"weft-closed","title":"Closed Epic","status":"closed"}]`, Code: 0}
+			}
+			return run.Result{Stdout: `[{"id":"weft-open","title":"Open Epic","status":"open"}]`, Code: 0}
+		case strings.Contains(j, "list --parent weft-closed"):
+			if slices.Contains(args, "--all") {
+				return run.Result{Stdout: `[{"id":"weft-closed.1","title":"pick","status":"closed"}]`, Code: 0}
+			}
+			return run.Result{Stdout: `[]`, Code: 0}
+		case strings.Contains(j, "list --parent weft-open"):
+			return run.Result{Stdout: `[{"id":"weft-open.1","title":"pick","status":"open"}]`, Code: 0}
+		default:
+			return run.Result{Code: 0}
+		}
+	}}
+
+	out, err := newTestCmd(r, "status")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// Behavioural: the closed epic must surface in the readout.
+	if s := out.String(); !strings.Contains(s, "weft-closed") {
+		t.Errorf("closed epic invisible — status must pass --all so finished work shows: %q", s)
+	}
+
+	// Direct lock: every `bd list` invocation must carry --all (covers both the
+	// epic list at status.go and the per-epic children list), so a dropped flag
+	// can never silently regress into hiding closed work again.
+	for _, c := range r.calls {
+		if len(c) >= 2 && c[0] == "bd" && c[1] == "list" && !slices.Contains(c, "--all") {
+			t.Errorf("bd list without --all (closed work would be hidden): %v", c)
+		}
 	}
 }
 
