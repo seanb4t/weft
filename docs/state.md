@@ -6,7 +6,7 @@
 # Weft — STATE (live position)
 
 > Status: **living** — rewritten as work moves; the synthesis layer, NOT a source of truth. ·
-> Updated: 2026-07-05
+> Updated: 2026-07-06
 >
 > **What this is:** the live "where are we, what's next, why". Read
 > [`roadmap.md`](./roadmap.md) first for intent, then this file for position, then **beads** for
@@ -63,10 +63,14 @@ The founding audit's manual bead×workspace×change join is now the shipped `wef
 capability. The old stray-pick roster (weft-8r4 #80, weft-ecj #89, weft-aff #93, weft-9i3 #92;
 v0.2.1 #74, v0.2.2 #95) is retired from this doc; git history holds it.
 
-- **New this cycle:** the `/drain` run plus this session's review fan-outs left a pile of stale jj
-  workspaces — `worktree-drain-epic-weft-x38` and ~40 `worktree-agent-*` isolation worktrees
-  (Claude Code subagent leftovers). These are precisely what the freshly-shipped `weft doctor` /
-  `weft reap` foreign-workspace guard exists to flag — a good first live target for the tooling.
+- **jj hygiene swept clean (2026-07-06):** cleared the accumulated review/drain subagent-isolation
+  residue — 67 orphan `worktree-agent-*` bookmarks + their empty changes, the stale
+  `worktree-drain-epic-weft-x38` liveness change (a superseded pre-squash-merge draft of #103), and
+  assorted empty scratch WCs. Live workspaces are now `default` + `claude-status` only; `jj log`
+  heads are just `main` + the two workspace `@`s. The by-hand sweep (empty+undescribed safety
+  filter → `jj bookmark delete` + `jj abandon`, non-empty/described changes verified redundant
+  before abandon) is precisely what `weft doctor` should *flag* and a future `doctor`-fed cleanup
+  verb should *automate* — `reap`'s foreign-workspace guard deliberately won't touch these.
 - **Carried:** the weft-9i3 Node/happy-dom XSS test (`helper.test.mjs`) is still unrun (needs a
   one-time `npm install`); the `helper.js` fix itself shipped in 0.2.2.
 
@@ -79,8 +83,8 @@ landed, this is the next milestone — and the first one weft can plausibly run 
 
 **Carried (independent):** the legacy `weft/` prompt tree is **gone** — `weft-9q5` landed via
 PR #107 (15 files removed, `NOTICE` repointed `weft/`→`plugin/`, seam-10 de-linked, review gate
-PASS). Remaining carry: sweep the ~40 stale `worktree-*` jj workspaces this session left (see
-Strays) — now a `weft doctor`/`reap` job, no longer by-hand.
+PASS). jj workspace/bookmark hygiene is swept clean this session (see Strays); the only standing
+carry is that no shipped verb yet *automates* that sweep (`doctor` flags, `reap` guards).
 
 ## Open questions / decisions in flight
 
