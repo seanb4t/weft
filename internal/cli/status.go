@@ -104,11 +104,14 @@ func (a *App) newStatusCmd() *cobra.Command {
 }
 
 // statusOverview builds the whole-warp readout: every epic (`bd list --type
-// epic --json`) with its picks (`bd list --parent <epic> --json`) counted by
-// status, plus an aggregate across all epics. An empty warp (no epics) is not
-// an error: it exits 0 with an explicit empty readout.
+// epic --all --json`) with its picks (`bd list --parent <epic> --all --json`)
+// counted by status, plus an aggregate across all epics. The --all flag is
+// load-bearing: bd's `list` defaults to open-only, so without it closed epics
+// and closed picks vanish — a warp of finished work would report as "empty" and
+// "done" would be structurally stuck at 0 (weft-1ve). An empty warp (no epics)
+// is not an error: it exits 0 with an explicit empty readout.
 func (a *App) statusOverview(cmd *cobra.Command) error {
-	res, err := run.BD(a.Runner, "list", "--type", "epic", "--json")
+	res, err := run.BD(a.Runner, "list", "--type", "epic", "--all", "--json")
 	if err != nil {
 		return exit.Hardf("bd list --type epic could not run: %v", err)
 	}
@@ -165,11 +168,13 @@ func (a *App) statusEpic(cmd *cobra.Command, epic string) error {
 }
 
 // epicChildren reads all of an epic's direct children via `bd list --parent
-// <epic> --json`, parsed into the warpChild shape (plan.go). Unlike warpScan
-// (plan.go), this does NOT filter to children carrying a weft-ref: label —
-// status must count every pick under the epic, labelled or not.
+// <epic> --all --json`, parsed into the warpChild shape (plan.go). --all is
+// required so closed picks are counted (bd lists open-only by default, see
+// statusOverview). Unlike warpScan (plan.go), this does NOT filter to children
+// carrying a weft-ref: label — status must count every pick under the epic,
+// labelled or not.
 func epicChildren(r run.Runner, epic string) ([]warpChild, error) {
-	res, err := run.BD(r, "list", "--parent", epic, "--json")
+	res, err := run.BD(r, "list", "--parent", epic, "--all", "--json")
 	if err != nil {
 		return nil, exit.Hardf("bd list --parent %s could not run: %v", epic, err)
 	}
