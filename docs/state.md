@@ -34,17 +34,23 @@ subcommand (`internal/cli/status.go`; whole-warp overview + per-epic drill; text
 **beads-only**, no steering-doc coupling) plus the `/weft:status` plugin skill that narrates it.
 Two waves, zero conflicts, both verify gates green.
 
-**The harvest (the point of dogfooding):** the planning/weaving logic came through clean on the
-first pass; **three defects surfaced at substrate *seams***, filed as `weft-uwq` (stale dist
-binary on PATH → `plan emit` silently under-wired parent/blocks edges — an exit-0 warp
-corruption), `weft-fxj` (`finish open`'s `gh pr create` omits `--head` → fails on jj's detached
-HEAD), and `weft-ojw` (`finish reconcile` errors when the merged head branch is deleted/pruned).
-All three cluster at tooling boundaries — artifact-currency, jj↔gh, post-merge — that unit tests
-don't exercise; the feature code itself carried none. `weft-uwq` remediation already in flight
-(`task install` jj-safe version stamp, PR #114 landed).
+**The harvest (the point of dogfooding):** the post-mortem
+(`docs/postmortems/2026-07-07-weft-weaves-weft.md`, PR #117) is blunt — weft *wove* the code but did
+**not** ship a working feature unaided. The authoring core came through clean, but defects surfaced
+at every substrate seam **and in the feature itself**: `weft-uwq` (stale dist binary → `plan emit`
+silently under-wired parent/blocks edges, exit-0 warp corruption; remediated by the `task install`
+jj-safe stamp, PR #114), `weft-fxj` (`finish open`'s `gh pr create` omits `--head` → fails on jj's
+detached HEAD), `weft-ojw` (`finish reconcile` errors on a deleted/pruned merged branch), and — the
+sharpest finding — **`weft-1ve` (P1): the delivered `weft status` shipped broken.** It calls
+`bd list` without `--all`, so it can never show closed/*done* work and reports a full warp as
+*empty*. It passed every gate because the tests used fake `bd` fixtures and the built command was
+**never run** against the real warp — so `weft-4e8` (P2) adds a real-execution smoke gate, without
+which the loop certifies compilation, not correctness. `weft-p8t` (P2) adds E2E coverage for the
+whole `finish` family (covers `weft-fxj`/`weft-ojw`).
 
-**Active implementation:** none — epic `weft-j4c` closed, both picks landed on `main` (112f2488),
-warp synced. The three seam findings are open.
+**Active implementation:** none — epic `weft-j4c` closed, both picks landed on `main`, warp synced.
+The findings are open (`weft-1ve`, `weft-4e8`, `weft-fxj`, `weft-ojw`, `weft-p8t`); `weft-uwq`
+closed via #114.
 
 **Prior milestone:** unattended-trust hardening (§3 / §7.4) landed 2026-07-05 (epic `weft-x38`,
 PR #103; steering groomed in #106) — `weft doctor`/`reap`/`internal/liveness`, invariants I1–I4 by
@@ -86,11 +92,13 @@ v0.2.1 #74, v0.2.2 #95) is retired from this doc; git history holds it.
 
 ## Next concrete step
 
-**Harden the self-weave loop** — §7 step 5 is now *demonstrated* (first run landed), not *done*.
-The next thread is to fix the three seam findings the run exposed — `weft-uwq` (binary-currency
-guard / `weft doctor` self-staleness check), `weft-fxj` (`finish open` → pass `--head`/`--base` to
-`gh`), `weft-ojw` (`finish reconcile` → tolerate a deleted/pruned merged branch) — so the next
-self-weave runs end-to-end without hand-holding. Then continue dogfooding toward the remaining
+**Harden the self-weave loop** — §7 step 5 is *demonstrated* (first run landed), not *done*; the
+post-mortem (#117) shows weft can weave code but not yet ship a working feature unaided. Two threads,
+in priority: **(a) the loop's blind spot** — `weft-1ve` (fix the broken `weft status`: add `--all`)
+and `weft-4e8` (a real-execution smoke gate, so the loop can't again certify a non-functional
+feature); **(b) close the loop's own ends** — `weft-fxj` (`finish open` → pass `--head`/`--base`),
+`weft-ojw` (`finish reconcile` → tolerate a deleted/pruned merged branch), with `weft-p8t` E2E
+coverage. (`weft-uwq` already remediated, PR #114.) Then continue dogfooding toward the remaining
 v1.0 exits (fovea onboard; self-host that retires this steering pair). `bd ready` for the queue.
 
 **Carried (independent):** the legacy `weft/` prompt tree is **gone** (`weft-9q5`, PR #107). jj
@@ -117,13 +125,16 @@ prefer `weft reap --epic <id>` to stay scoped.
 A fresh session should read, in order: `roadmap.md` (intent) → `design.md` + `seams/` (what's
 built) → this file (where we are). Then `bd ready` for the actual work queue.
 
-- **Landed this cycle:** the **first weft-weaves-weft self-weave** — epic `weft-j4c` planned and
-  woven through weft's own loop and merged as PR #115 (`weft status` subcommand + `/weft:status`
-  skill). The run harvested three seam findings (`weft-uwq`, `weft-fxj`, `weft-ojw`). Epic + both
-  picks closed, warp synced.
+- **Landed this cycle:** the **first weft-weaves-weft self-weave** — epic `weft-j4c` woven through
+  weft's own loop and merged as PR #115 (`weft status` + `/weft:status`), plus its **post-mortem**
+  (PR #117). Honest verdict: the authoring core self-hosted, but `finish` was hand-held and the
+  deliverable **shipped broken** — findings `weft-uwq` (closed), `weft-fxj`, `weft-ojw`, and the new
+  `weft-1ve` (status broken), `weft-4e8` (real-run verification gap), `weft-p8t` (finish E2E). Epic +
+  both picks closed, warp synced.
 - **Prior cycle:** unattended-trust milestone (`weft-x38`, PR #103; steering #106) and legacy
   `weft/` tree deletion (`weft-9q5`, PR #107).
 - **Decisions settled:** roadmap §9 (1–5) confirmed 2026-07-04.
-- **Next thread:** harden the self-weave loop — fix `weft-uwq`/`weft-fxj`/`weft-ojw`, then continue
-  dogfooding toward the remaining v1.0 exits (fovea onboard; self-host). Fresh work off clean
-  `main` (112f2488, #115).
+- **Next thread:** harden the self-weave loop — first the loop's blind spot (`weft-1ve` broken
+  status, `weft-4e8` real-run gate), then close its ends (`weft-fxj`/`weft-ojw`, E2E `weft-p8t`);
+  then continue dogfooding toward the remaining v1.0 exits (fovea onboard; self-host). Fresh work off
+  clean `main`.
