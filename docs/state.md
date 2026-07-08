@@ -48,9 +48,20 @@ sharpest finding — **`weft-1ve` (P1): the delivered `weft status` shipped brok
 which the loop certifies compilation, not correctness. `weft-p8t` (P2) adds E2E coverage for the
 whole `finish` family (covers `weft-fxj`/`weft-ojw`).
 
+**The deeper harvest — verification doctrine designed (2026-07-07):** the `weft-1ve` root
+cause — circular self-certification (one executor authors code + fake + tests that agree; the
+gate checks only their consistency) — is now designed out as **seam 12**
+(`docs/seams/12-verification-doctrine.md`, bead `weft-y85`, design-review READY round 2,
+PR #120): a per-project verification profile (tier commands in `.weft/config.toml [verify]`,
+conventions in bd memories), a validation-surface taxonomy (pure-logic / integration / e2e)
+with cumulative tier requirements, mandatory reviewer adequacy adjudication enforced at
+`pick seal`, and a human-gated waiver valve. Six decisions resolved with Sean — recorded as
+notes on `weft-y85` and in the seam's §7. `weft-4e8` folds in as the e2e tier; `weft-1ve` is
+the exemplar the new gate must catch.
+
 **Active implementation:** none — epic `weft-j4c` closed, both picks landed on `main`, warp synced.
 `weft-1ve` **fixed** (PR #118 merged); the remaining findings are open (`weft-4e8`, `weft-fxj`,
-`weft-ojw`, `weft-p8t`); `weft-uwq` closed via #114.
+`weft-ojw`, `weft-p8t`); `weft-uwq` closed via #114. Seam 12 is designed, not yet built.
 
 **Prior milestone:** unattended-trust hardening (§3 / §7.4) landed 2026-07-05 (epic `weft-x38`,
 PR #103; steering groomed in #106) — `weft doctor`/`reap`/`internal/liveness`, invariants I1–I4 by
@@ -94,18 +105,15 @@ v0.2.1 #74, v0.2.2 #95) is retired from this doc; git history holds it.
 
 **Harden the self-weave loop** — §7 step 5 is *demonstrated* (first run landed), not *done*; the
 post-mortem (#117) shows weft can weave code but not yet ship a working feature unaided. Two threads,
-in priority: **(a) the loop's blind spot** — `weft-1ve` (the broken `weft status`) is **fixed** (PR
-#118: `--all` + a *contract-faithful* regression fake, verified against the real warp). Its root
-cause generalized: the verify gap is **circular self-certification** — an executor authors the test,
-the fake it drives, and the code, and the gate checks only that they agree — not a missing flag. So
-`weft-4e8` (real-execution smoke gate) is now a *subset* of the deeper **`weft-y85`**: *generalize
-planner + verification* so self-certifying, fixture-only validation is structurally impossible for
-substrate-touching work — a discovered verification profile + per-pick validation surface + verify's
-three questions, **language/repo-agnostic**, held for a **dedicated design session** (brainstorm →
-spec → warp). **(b) close the loop's own ends** — `weft-fxj` (`finish open` → pass `--head`/`--base`),
-`weft-ojw` (`finish reconcile` → tolerate a deleted/pruned merged branch), with `weft-p8t` E2E
-coverage. (`weft-uwq` already remediated, PR #114.) Then continue dogfooding toward the remaining
-v1.0 exits (fovea onboard; self-host that retires this steering pair). `bd ready` for the queue.
+in priority: **(a) build the verification doctrine** — the `weft-y85` design session is **done**:
+seam 12 (`docs/seams/12-verification-doctrine.md`, PR #120) is design-review READY (round 2) and
+awaits its planning pass — **plan seam 12 into the warp**. `weft-4e8` folds in as the e2e tier of the
+new gate; `weft-1ve` (fixed, PR #118) is the exemplar the gate must catch. Its implementation closes
+the green-but-hollow hole before the next self-weave can be trusted. **(b) close the loop's own
+ends** — `weft-fxj` (`finish open` → pass `--head`/`--base`), `weft-ojw` (`finish reconcile` →
+tolerate a deleted/pruned merged branch), with `weft-p8t` E2E coverage. (`weft-uwq` already
+remediated, PR #114.) Then continue dogfooding toward the remaining v1.0 exits (fovea onboard;
+self-host that retires this steering pair). `bd ready` for the queue.
 
 **Carried (independent):** the legacy `weft/` prompt tree is **gone** (`weft-9q5`, PR #107). jj
 workspace hygiene: `weft reap` now actively collects stale empty workspaces (it reaped the
