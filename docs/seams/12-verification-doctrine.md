@@ -5,7 +5,8 @@
 
 # Seam 12 — Verification doctrine: no self-certification across real boundaries
 
-> Status: **proposed** (design-reviewer pending). Sub-spec of
+> Status: **designed** (design-reviewer READY, round 2; round-1 findings
+> fixed inline). Not yet built. Sub-spec of
 > [`docs/design.md`](../design.md). Tracked as bead `weft-y85`. Surfaced by the
 > first weft-weaves-weft self-weave post-mortem (`weft-rcc` / PR #115), where
 > `weft status` shipped green through every gate yet non-functional
