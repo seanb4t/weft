@@ -5,8 +5,9 @@
 
 # Weft — Design
 
-> Status: **shipped — architecture overview of what exists.** All eleven seams
-> (see [`docs/seams/`](seams/)) are designed, built, and released; the engine
+> Status: **shipped — architecture overview of what exists.** Seams 01–11
+> (see [`docs/seams/`](seams/)) are designed, built, and released; seam 12
+> (verification doctrine, `weft-y85`) is designed and not yet built. The engine
 > ships as a single Go binary. Intent and the path now live in
 > [`roadmap.md`](./roadmap.md), live position in [`state.md`](./state.md), and the
 > atomic work graph is **beads**. §9 below is retained as history — the original
