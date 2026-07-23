@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "24"
       # claude.ai/install.sh returns HTTP 403 in CI behind Cloudflare
@@ -69,7 +69,7 @@ jobs:
       # warp-status formatting via a hermetic fake `bd` (no real warp needed). uv
       # here just provisions a throwaway python+pytest env for the test runner.
       # Pinned for supply-chain safety — bump deliberately; Renovate tracks the SHA.
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - run: uv run --python 3.12 --with pytest python -m pytest plugin/hooks/tests -q
 
   integration:
@@ -116,7 +116,7 @@ jobs:
       - name: Install jj (pinned, checksum-verified)
         run: |
           set -euo pipefail
-          JJ_VERSION=0.42.0
+          JJ_VERSION=0.43.0
           JJ_SHA256=2d91e81d649e617a81608e7401ad1106029c15ece01ac928c4a351abef42be6a
           url="https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-x86_64-unknown-linux-musl.tar.gz"
           curl -fsSL -o jj.tar.gz "$url"
