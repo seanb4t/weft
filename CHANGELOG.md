@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.3](https://github.com/seanb4t/weft/compare/v0.2.2...v0.2.3) (2026-07-23)
+
+
+### Features
+
+* unattended-trust hardening (roadmap §3, epic weft-x38) ([#103](https://github.com/seanb4t/weft/issues/103)) ([2245178](https://github.com/seanb4t/weft/commit/224517849a0c2b8f77b277ac6e52930700481402))
+* weft status — warp progress readout (binary subcommand + skill) ([#115](https://github.com/seanb4t/weft/issues/115)) ([112f248](https://github.com/seanb4t/weft/commit/112f24882d036a2f118210eb95a89fbaf4499133))
+
+
+### Bug Fixes
+
+* **status:** pass --all to bd list so closed work is visible (weft-1ve) ([#118](https://github.com/seanb4t/weft/issues/118)) ([0366410](https://github.com/seanb4t/weft/commit/03664104fa96479f74747421ed53d19ed7156eab))
+
 ## [0.2.2](https://github.com/seanb4t/weft/compare/v0.2.1...v0.2.2) (2026-07-03)
 
 
