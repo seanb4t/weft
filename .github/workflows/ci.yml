@@ -69,7 +69,7 @@ jobs:
       # warp-status formatting via a hermetic fake `bd` (no real warp needed). uv
       # here just provisions a throwaway python+pytest env for the test runner.
       # Pinned for supply-chain safety — bump deliberately; Renovate tracks the SHA.
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv run --python 3.12 --with pytest python -m pytest plugin/hooks/tests -q
 
   integration:
