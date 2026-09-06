@@ -46,7 +46,7 @@ jobs:
       # claude.ai/install.sh returns HTTP 403 in CI behind Cloudflare
       # (anthropics/claude-code#36306); the npm package is the CI-safe install.
       # Pinned for reproducible CI / supply-chain safety — bump deliberately.
-      - run: npm install -g @anthropic-ai/claude-code@2.1.220
+      - run: npm install -g @anthropic-ai/claude-code@2.1.260
       - run: claude plugin validate ./plugin --strict
       - run: claude plugin validate . --strict
       # ${CLAUDE_PLUGIN_ROOT} discipline: no stale weft/ intra-tree paths in the
@@ -93,7 +93,7 @@ jobs:
       - name: Install bd (pinned, checksum-verified)
         run: |
           set -euo pipefail
-          BD_VERSION=1.1.0
+          BD_VERSION=1.1.2
           # BD_SHA256 is the linux_amd64 tarball hash for the pinned BD_VERSION.
           # Renovate bumps BD_VERSION but cannot recompute this hash, so on any
           # bump recompute it — the sha256sum -c check below fails closed until
