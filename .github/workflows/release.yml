@@ -39,13 +39,13 @@ jobs:
         with:
           go-version-file: go.mod
       - if: ${{ steps.release.outputs.release_created }}
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           # Exact pin (not the floating "~> v2" range): this step runs with
           # contents:write via the app token, so the GoReleaser toolchain version
           # is part of the supply chain. Bump deliberately (lockstep with ci.yml).
-          version: "2.16.0"
+          version: "v2.18.3"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
